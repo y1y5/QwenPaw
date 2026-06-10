@@ -87,7 +87,8 @@ async def _teardown() -> None:
             if callable(remover):
                 try:
                     remover(  # pylint: disable=not-callable
-                        hook_type, hook_name
+                        hook_type,
+                        hook_name,
                     )
                 except Exception:
                     logger.debug(

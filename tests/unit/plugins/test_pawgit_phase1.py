@@ -166,13 +166,14 @@ async def test_snapshot_gitignore_and_pawgit_excludes(
         check=True,
     )
     (nested_repo / "draft.txt").write_text(
-        "must be excluded", encoding="utf-8"
+        "must be excluded",
+        encoding="utf-8",
     )
     (tmp_path / "debug.log").write_text("must be excluded", encoding="utf-8")
 
     ref = await _auto_snapshot(engine)
     tree = set(
-        engine._run_git("ls-tree", "-r", "--name-only", ref).splitlines()
+        engine._run_git("ls-tree", "-r", "--name-only", ref).splitlines(),
     )
 
     assert session.relative_to(tmp_path).as_posix() in tree
@@ -258,10 +259,12 @@ async def test_snapshot_with_message_uses_sanitized_unique_name(
     _write_session(tmp_path)
 
     first = await engine.snapshot(
-        message="Release candidate #1", **DEFAULT_SESSION
+        message="Release candidate #1",
+        **DEFAULT_SESSION,
     )
     second = await engine.snapshot(
-        message="Release candidate #1", **DEFAULT_SESSION
+        message="Release candidate #1",
+        **DEFAULT_SESSION,
     )
 
     assert first == "Release-candidate-1"

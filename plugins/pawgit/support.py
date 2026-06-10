@@ -205,7 +205,7 @@ def render_timeline(entries: list[TimelineEntry]) -> str:
             )
         snapshot_name = entry.name if entry.kind == "snap" else None
         timestamp = datetime.fromtimestamp(
-            entry.timestamp_ms / 1000
+            entry.timestamp_ms / 1000,
         ).astimezone()
         date_text = timestamp.strftime("%Y-%m-%d %H:%M:%S %z")
         query = " ".join(entry.query.split()) if entry.query else "N/A"
@@ -230,7 +230,7 @@ def render_rewind(result: RewindResult) -> str:
     lines.append(f"- Target: `{result.target}`")
     lines.append(f"- Commit: `{result.commit[:12]}`")
     lines.append(
-        f"- Restored: {', '.join(f'`{p}`' for p in result.restored_paths)}"
+        f"- Restored: {', '.join(f'`{p}`' for p in result.restored_paths)}",
     )
     if result.pre_rewind_ref:
         lines.append(f"- Safety ref: `{result.pre_rewind_ref}`")

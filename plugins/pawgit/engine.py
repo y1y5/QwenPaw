@@ -93,7 +93,9 @@ class PawGitEngine(ShadowGitRepository):
         message: str,
     ) -> str:
         key = session_key(
-            channel=channel, user_id=user_id, session_id=session_id
+            channel=channel,
+            user_id=user_id,
+            session_id=session_id,
         )
         now_ms = int(time.time() * 1000)
         if kind == "auto":
@@ -171,7 +173,9 @@ class PawGitEngine(ShadowGitRepository):
         include_all: bool,
     ) -> list[TimelineEntry]:
         key = session_key(
-            channel=channel, user_id=user_id, session_id=session_id
+            channel=channel,
+            user_id=user_id,
+            session_id=session_id,
         )
         refs = self._list_pawgit_refs()
         if not include_all:
@@ -282,7 +286,7 @@ class PawGitEngine(ShadowGitRepository):
         """Conv-only rewind to a timeline index, snapshot name, ref, or SHA."""
         if not target:
             raise PawGitError(
-                "Usage: /rewind <N | snap_name | sha> [--dry-run]"
+                "Usage: /rewind <N | snap_name | sha> [--dry-run]",
             )
         async with self._lock:
             return await asyncio.to_thread(
@@ -338,15 +342,22 @@ class PawGitEngine(ShadowGitRepository):
         channel: str,
     ) -> TimelineEntry:
         timeline = self._timeline_sync(
-            session_id, user_id, channel, 200, False
+            session_id,
+            user_id,
+            channel,
+            200,
+            False,
         )
         key = session_key(
-            channel=channel, user_id=user_id, session_id=session_id
+            channel=channel,
+            user_id=user_id,
+            session_id=session_id,
         )
         snap_ref = f"refs/snap/{key}/{sanitize_ref_component(target)}"
         if self._ref_exists(snap_ref):
             return self._entry_from_ref(
-                snap_ref, self._run_git("rev-parse", snap_ref)
+                snap_ref,
+                self._run_git("rev-parse", snap_ref),
             )
         if target.isdigit():
             index = int(target)
@@ -359,7 +370,9 @@ class PawGitEngine(ShadowGitRepository):
                 return entry
         try:
             commit = self._run_git(
-                "rev-parse", "--verify", f"{target}^{{commit}}"
+                "rev-parse",
+                "--verify",
+                f"{target}^{{commit}}",
             )
             return TimelineEntry(
                 ref=target,
@@ -376,7 +389,7 @@ class PawGitEngine(ShadowGitRepository):
         except PawGitError as exc:
             if target.isdigit():
                 raise PawGitError(
-                    f"Timeline index out of range: {target}"
+                    f"Timeline index out of range: {target}",
                 ) from exc
             raise PawGitError(f"Unknown rewind target: {target}") from exc
 
@@ -421,7 +434,9 @@ class PawGitEngine(ShadowGitRepository):
         pre_rewind_days: int,
     ) -> GcResult:
         key = session_key(
-            channel=channel, user_id=user_id, session_id=session_id
+            channel=channel,
+            user_id=user_id,
+            session_id=session_id,
         )
         refs = self._list_pawgit_refs()
         now_ms = int(time.time() * 1000)
