@@ -1,0 +1,21 @@
+{
+  "id": "pawgit",
+  "name": "PawGit",
+  "version": "1.0.0",
+  "type": "command",
+  "description": "Shadow-git checkpoints and rewind for QwenPaw workspaces",
+  "author": "PawGit",
+  "entry": {
+    "backend": "backend.py"
+  },
+  "dependencies": [],
+  "min_version": "1.1.10",
+  "meta": {
+    "commands": [
+      { "name": "/timeline" },
+      { "name": "/snapshot" },
+      { "name": "/rewind" },
+      { "name": "/gc" }
+    ]
+  }
+}
