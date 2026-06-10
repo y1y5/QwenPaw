@@ -2,7 +2,7 @@
 """PawGit shadow-git engine for Phase 1."""
 
 # Internal sync methods mirror their async entry points for asyncio.to_thread.
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-arguments
 
 from __future__ import annotations
 

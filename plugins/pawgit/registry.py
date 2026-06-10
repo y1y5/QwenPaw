@@ -7,7 +7,7 @@ import asyncio
 import logging
 import threading
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Any, Callable, Coroutine
 
 from .engine import PawGitEngine
 from .utils import session_key
@@ -23,7 +23,7 @@ class Debouncer:
         self._pending: dict[str, asyncio.TimerHandle] = {}
 
     def schedule(
-        self, key: str, coro_factory: Callable[[], Awaitable[None]]
+        self, key: str, coro_factory: Callable[[], Coroutine[Any, Any, None]]
     ) -> None:
         loop = asyncio.get_running_loop()
         handle = self._pending.pop(key, None)
