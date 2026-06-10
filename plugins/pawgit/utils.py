@@ -8,14 +8,18 @@ from pathlib import Path
 
 from qwenpaw.app.runner.session import sanitize_filename
 
-
 _REF_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._/-]+")
 _REF_DOTLOCK_RE = re.compile(r"\.lock(?:/|$)")
 
 
 def session_key(*, channel: str, user_id: str, session_id: str) -> str:
     """Return a filesystem/ref-safe key for a QwenPaw session."""
-    raw = f"{channel or 'unknown'}-{user_id or 'anonymous'}-{session_id or 'default'}"
+    parts = (
+        channel or "unknown",
+        user_id or "anonymous",
+        session_id or "default",
+    )
+    raw = "-".join(parts)
     safe = sanitize_filename(raw).strip("-_.")
     return safe or "default"
 
@@ -43,9 +47,13 @@ def session_file_path(
     """Return the QwenPaw SafeJSONSession path for a session."""
     safe_sid = sanitize_filename(session_id)
     safe_uid = sanitize_filename(user_id) if user_id else ""
-    filename = f"{safe_uid}_{safe_sid}.json" if safe_uid else f"{safe_sid}.json"
+    filename = (
+        f"{safe_uid}_{safe_sid}.json" if safe_uid else f"{safe_sid}.json"
+    )
     if channel:
-        return workspace_dir / "sessions" / sanitize_filename(channel) / filename
+        return (
+            workspace_dir / "sessions" / sanitize_filename(channel) / filename
+        )
     return workspace_dir / "sessions" / filename
 
 

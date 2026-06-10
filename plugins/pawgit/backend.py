@@ -86,7 +86,9 @@ async def _teardown() -> None:
             remover = getattr(QwenPawAgent, "remove_class_hook", None)
             if callable(remover):
                 try:
-                    remover(hook_type, hook_name)
+                    remover(
+                        hook_type, hook_name
+                    )  # pylint: disable=not-callable
                 except Exception:
                     logger.debug(
                         "Failed to remove PawGit hook %s/%s",

@@ -204,7 +204,9 @@ def render_timeline(entries: list[TimelineEntry]) -> str:
                 ],
             )
         snapshot_name = entry.name if entry.kind == "snap" else None
-        timestamp = datetime.fromtimestamp(entry.timestamp_ms / 1000).astimezone()
+        timestamp = datetime.fromtimestamp(
+            entry.timestamp_ms / 1000
+        ).astimezone()
         date_text = timestamp.strftime("%Y-%m-%d %H:%M:%S %z")
         query = " ".join(entry.query.split()) if entry.query else "N/A"
         if len(query) > 120:
@@ -227,7 +229,9 @@ def render_rewind(result: RewindResult) -> str:
     lines = [f"**PawGit {mode}**"]
     lines.append(f"- Target: `{result.target}`")
     lines.append(f"- Commit: `{result.commit[:12]}`")
-    lines.append(f"- Restored: {', '.join(f'`{p}`' for p in result.restored_paths)}")
+    lines.append(
+        f"- Restored: {', '.join(f'`{p}`' for p in result.restored_paths)}"
+    )
     if result.pre_rewind_ref:
         lines.append(f"- Safety ref: `{result.pre_rewind_ref}`")
     return "\n".join(lines)

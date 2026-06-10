@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """PawGit Phase 1 regression and slash-command tests."""
 
+# pylint: disable=consider-using-from-import
+# pylint: disable=protected-access,redefined-outer-name
+# pylint: disable=wrong-import-order,wrong-import-position
+
 from __future__ import annotations
 
 import asyncio
@@ -49,7 +53,9 @@ def _session_path(
     session_id: str = "console:default",
 ) -> Path:
     directory = workspace / "sessions" / sanitize_filename(channel)
-    filename = f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
+    filename = (
+        f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
+    )
     return directory / filename
 
 
@@ -139,7 +145,7 @@ def engine(tmp_path: Path) -> PawGitEngine:
 # ---------------------------------------------------------------------------
 
 
-async def test_snapshot_bypasses_workspace_gitignore_but_honors_pawgit_excludes(
+async def test_snapshot_gitignore_and_pawgit_excludes(
     engine: PawGitEngine,
     tmp_path: Path,
 ):
@@ -159,11 +165,15 @@ async def test_snapshot_bypasses_workspace_gitignore_but_honors_pawgit_excludes(
         text=True,
         check=True,
     )
-    (nested_repo / "draft.txt").write_text("must be excluded", encoding="utf-8")
+    (nested_repo / "draft.txt").write_text(
+        "must be excluded", encoding="utf-8"
+    )
     (tmp_path / "debug.log").write_text("must be excluded", encoding="utf-8")
 
     ref = await _auto_snapshot(engine)
-    tree = set(engine._run_git("ls-tree", "-r", "--name-only", ref).splitlines())
+    tree = set(
+        engine._run_git("ls-tree", "-r", "--name-only", ref).splitlines()
+    )
 
     assert session.relative_to(tmp_path).as_posix() in tree
     assert "ignored-by-workspace.txt" in tree
@@ -247,8 +257,12 @@ async def test_snapshot_with_message_uses_sanitized_unique_name(
 ):
     _write_session(tmp_path)
 
-    first = await engine.snapshot(message="Release candidate #1", **DEFAULT_SESSION)
-    second = await engine.snapshot(message="Release candidate #1", **DEFAULT_SESSION)
+    first = await engine.snapshot(
+        message="Release candidate #1", **DEFAULT_SESSION
+    )
+    second = await engine.snapshot(
+        message="Release candidate #1", **DEFAULT_SESSION
+    )
 
     assert first == "Release-candidate-1"
     assert second == "Release-candidate-1-2"
@@ -259,7 +273,7 @@ async def test_snapshot_with_message_uses_sanitized_unique_name(
 # ---------------------------------------------------------------------------
 
 
-async def test_timeline_defaults_to_current_session_and_groups_checkpoint_types(
+async def test_timeline_current_session_and_groups(
     engine: PawGitEngine,
     tmp_path: Path,
 ):
@@ -290,7 +304,8 @@ async def test_timeline_defaults_to_current_session_and_groups_checkpoint_types(
         "pre-rewind",
     ]
     assert all(
-        entry.session_key == "console-default-console--default" for entry in entries
+        entry.session_key == "console-default-console--default"
+        for entry in entries
     )
 
 
@@ -323,7 +338,7 @@ async def test_timeline_limit_and_all_sessions(
     assert len(all_entries) == 4
 
 
-async def test_timeline_table_format_contains_dates_queries_and_rewind_commands(
+async def test_timeline_table_format(
     engine: PawGitEngine,
     tmp_path: Path,
 ):
@@ -343,7 +358,9 @@ async def test_timeline_table_format_contains_dates_queries_and_rewind_commands(
     assert "query with \\| pipe and newline" in rendered
     assert "`/rewind 1`" in rendered
     assert f"`/rewind {snap_name}`" in rendered
-    assert all(f"`/rewind {entry.commit[:12]}`" in rendered for entry in entries)
+    assert all(
+        f"`/rewind {entry.commit[:12]}`" in rendered for entry in entries
+    )
     assert "+0" in rendered or "-0" in rendered
 
 
@@ -430,7 +447,7 @@ async def test_rewind_only_restores_current_session(
     assert other.read_text(encoding="utf-8") == '{"other": "after"}'
 
 
-async def test_rewind_missing_session_blob_preserves_live_file_and_creates_no_safety_ref(
+async def test_rewind_missing_blob_preserves_file(
     engine: PawGitEngine,
     tmp_path: Path,
 ):
@@ -495,7 +512,7 @@ async def test_gc_dry_run_reports_without_deleting_and_render_is_readable(
     assert "| Type | Session | Name |" in rendered
 
 
-async def test_gc_compact_deletes_current_auto_but_preserves_snap_and_other_session(
+async def test_gc_compact_preserves_snap_and_other_session(
     engine: PawGitEngine,
     tmp_path: Path,
 ):
@@ -555,7 +572,9 @@ async def test_gc_all_sessions_and_pre_rewind_retention(
 
     assert console_auto in result.deleted_refs
     assert ding_auto in result.deleted_refs
-    assert any(ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs)
+    assert any(
+        ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +629,9 @@ async def test_slash_handlers_forward_snapshot_timeline_rewind_and_gc_flags(
         _control_context("--compact --all-sessions --dry-run"),
     )
 
-    assert snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
+    assert (
+        snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
+    )
     fake.snapshot.assert_awaited_once_with(
         session_id="console:default",
         user_id="default",

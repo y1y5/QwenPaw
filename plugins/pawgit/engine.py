@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """PawGit shadow-git engine for Phase 1."""
 
+# Internal sync methods mirror their async entry points for asyncio.to_thread.
+# pylint: disable=too-many-positional-arguments
+
 from __future__ import annotations
 
 import asyncio
 import time
 
+from . import support as _support
 from .repository import ShadowGitRepository
 from .support import (
-    EXCLUDE_PATTERNS,
     SNAPSHOT_EXCLUDE_PATHSPECS,
     GcResult,
     PawGitError,
@@ -26,6 +29,9 @@ from .support import (
     render_timeline as render_timeline_entries,
 )
 from .utils import sanitize_ref_component, session_file_path, session_key
+
+# Public compatibility exports retained for existing integrations and tests.
+EXCLUDE_PATTERNS = _support.EXCLUDE_PATTERNS
 
 # Backward-compatible alias used by existing tests and integrations.
 _exclude_pattern_to_pathspec = exclude_pattern_to_pathspec
@@ -86,7 +92,9 @@ class PawGitEngine(ShadowGitRepository):
         name: str | None,
         message: str,
     ) -> str:
-        key = session_key(channel=channel, user_id=user_id, session_id=session_id)
+        key = session_key(
+            channel=channel, user_id=user_id, session_id=session_id
+        )
         now_ms = int(time.time() * 1000)
         if kind == "auto":
             ref = f"refs/auto/{key}/{now_ms}"
@@ -108,7 +116,7 @@ class PawGitEngine(ShadowGitRepository):
 
         # PawGit owns its snapshot boundary. Rebuild the parentless snapshot
         # index from scratch, bypassing every workspace .gitignore (including
-        # nested repos under coding_projects/) while retaining EXCLUDE_PATTERNS.
+        # nested coding_projects repos) while retaining PawGit exclusions.
         self._run_git("read-tree", "--empty")
         self._run_git(
             "add",
@@ -162,10 +170,14 @@ class PawGitEngine(ShadowGitRepository):
         limit: int,
         include_all: bool,
     ) -> list[TimelineEntry]:
-        key = session_key(channel=channel, user_id=user_id, session_id=session_id)
+        key = session_key(
+            channel=channel, user_id=user_id, session_id=session_id
+        )
         refs = self._list_pawgit_refs()
         if not include_all:
-            refs = [item for item in refs if self._ref_session_key(item[0]) == key]
+            refs = [
+                item for item in refs if self._ref_session_key(item[0]) == key
+            ]
         kind_priority = {"auto": 0, "snap": 1, "pre-rewind": 2}
         refs.sort(
             key=lambda item: (
@@ -174,7 +186,8 @@ class PawGitEngine(ShadowGitRepository):
             ),
         )
         entries = [
-            self._entry_from_ref(ref, commit) for ref, commit in refs[: max(1, limit)]
+            self._entry_from_ref(ref, commit)
+            for ref, commit in refs[: max(1, limit)]
         ]
         return entries
 
@@ -251,7 +264,9 @@ class PawGitEngine(ShadowGitRepository):
             if maybe_ts.isdigit():
                 return int(maybe_ts)
         try:
-            return int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
+            return (
+                int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
+            )
         except PawGitError:
             return 0
 
@@ -266,7 +281,9 @@ class PawGitEngine(ShadowGitRepository):
     ) -> RewindResult:
         """Conv-only rewind to a timeline index, snapshot name, ref, or SHA."""
         if not target:
-            raise PawGitError("Usage: /rewind <N | snap_name | sha> [--dry-run]")
+            raise PawGitError(
+                "Usage: /rewind <N | snap_name | sha> [--dry-run]"
+            )
         async with self._lock:
             return await asyncio.to_thread(
                 self._rewind_sync,
@@ -320,11 +337,17 @@ class PawGitEngine(ShadowGitRepository):
         user_id: str,
         channel: str,
     ) -> TimelineEntry:
-        timeline = self._timeline_sync(session_id, user_id, channel, 200, False)
-        key = session_key(channel=channel, user_id=user_id, session_id=session_id)
+        timeline = self._timeline_sync(
+            session_id, user_id, channel, 200, False
+        )
+        key = session_key(
+            channel=channel, user_id=user_id, session_id=session_id
+        )
         snap_ref = f"refs/snap/{key}/{sanitize_ref_component(target)}"
         if self._ref_exists(snap_ref):
-            return self._entry_from_ref(snap_ref, self._run_git("rev-parse", snap_ref))
+            return self._entry_from_ref(
+                snap_ref, self._run_git("rev-parse", snap_ref)
+            )
         if target.isdigit():
             index = int(target)
             if 1 <= index <= len(timeline):
@@ -335,7 +358,9 @@ class PawGitEngine(ShadowGitRepository):
             if entry.commit.startswith(target):
                 return entry
         try:
-            commit = self._run_git("rev-parse", "--verify", f"{target}^{{commit}}")
+            commit = self._run_git(
+                "rev-parse", "--verify", f"{target}^{{commit}}"
+            )
             return TimelineEntry(
                 ref=target,
                 kind="sha",
@@ -350,7 +375,9 @@ class PawGitEngine(ShadowGitRepository):
             )
         except PawGitError as exc:
             if target.isdigit():
-                raise PawGitError(f"Timeline index out of range: {target}") from exc
+                raise PawGitError(
+                    f"Timeline index out of range: {target}"
+                ) from exc
             raise PawGitError(f"Unknown rewind target: {target}") from exc
 
     async def gc(
@@ -393,7 +420,9 @@ class PawGitEngine(ShadowGitRepository):
         keep_days: int,
         pre_rewind_days: int,
     ) -> GcResult:
-        key = session_key(channel=channel, user_id=user_id, session_id=session_id)
+        key = session_key(
+            channel=channel, user_id=user_id, session_id=session_id
+        )
         refs = self._list_pawgit_refs()
         now_ms = int(time.time() * 1000)
         keep_cutoff_ms = now_ms - keep_days * 24 * 60 * 60 * 1000
@@ -406,7 +435,8 @@ class PawGitEngine(ShadowGitRepository):
             and (all_sessions or item[0].split("/")[2] == key)
         ]
         auto_refs.sort(
-            key=lambda item: self._entry_timestamp(item[0], item[1]), reverse=True
+            key=lambda item: self._entry_timestamp(item[0], item[1]),
+            reverse=True,
         )
         kept_auto = {ref for ref, _ in auto_refs[:keep_count]}
         delete_refs: list[str] = []

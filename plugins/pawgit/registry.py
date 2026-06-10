@@ -22,7 +22,9 @@ class Debouncer:
         self.delay = delay
         self._pending: dict[str, asyncio.TimerHandle] = {}
 
-    def schedule(self, key: str, coro_factory: Callable[[], Awaitable[None]]) -> None:
+    def schedule(
+        self, key: str, coro_factory: Callable[[], Awaitable[None]]
+    ) -> None:
         loop = asyncio.get_running_loop()
         handle = self._pending.pop(key, None)
         if handle is not None:
@@ -90,7 +92,9 @@ class PawGitRegistry:
         engine = self.get_for_agent(agent)
         if engine is None or not session_id:
             return
-        key = session_key(channel=channel, user_id=user_id, session_id=session_id)
+        key = session_key(
+            channel=channel, user_id=user_id, session_id=session_id
+        )
         debounce_key = f"{engine.workspace_dir}:{key}"
 
         async def _snapshot() -> None:
