@@ -352,12 +352,53 @@ async def test_timeline_table_format(
     assert "## AUTO Checkpoints" in rendered
     assert "## SNAPSHOT Checkpoints" in rendered
     assert "## PRE-REWIND Checkpoints" in rendered
-    assert "| # | Snapshot Name | SHA | Date | Query | Rewind Way |" in rendered
+    assert "| Session # | Snapshot Name | SHA | Date | Query | Rewind Way |" in rendered
+    assert "### Channel: `console`" in rendered
     assert "query with \\| pipe and newline" in rendered
     assert "`/pawgit rewind 1`" in rendered
     assert f"`/pawgit rewind {snap_name}`" in rendered
     assert all(f"`/pawgit rewind {entry.commit[:12]}`" in rendered for entry in entries)
     assert "+0" in rendered or "-0" in rendered
+
+
+async def test_timeline_all_groups_channels_and_hides_foreign_rewind_ways(
+    engine: PawGitEngine,
+    tmp_path: Path,
+):
+    _write_session(tmp_path, queries=("console query",))
+    console_ref = await _auto_snapshot(engine)
+    _write_session(
+        tmp_path,
+        channel="dingtalk",
+        user_id="ding-user",
+        session_id="ding-session",
+        queries=("dingtalk query",),
+    )
+    dingtalk_ref = await _auto_snapshot(
+        engine,
+        channel="dingtalk",
+        user_id="ding-user",
+        session_id="ding-session",
+    )
+
+    entries = await engine.timeline(include_all=True, **DEFAULT_SESSION)
+    rendered = engine.render_timeline(entries)
+    console_entry = next(entry for entry in entries if entry.ref == console_ref)
+    dingtalk_entry = next(entry for entry in entries if entry.ref == dingtalk_ref)
+
+    assert "### Channel: `console`" in rendered
+    assert "### Channel: `dingtalk`" in rendered
+    assert console_entry.rewind_index == 1
+    assert dingtalk_entry.rewind_index is None
+    assert f"`/pawgit rewind {console_entry.commit[:12]}`" in rendered
+    assert f"`/pawgit rewind {dingtalk_entry.commit[:12]}`" not in rendered
+    dingtalk_row = next(
+        line
+        for line in rendered.splitlines()
+        if f"`{dingtalk_entry.commit[:12]}`" in line
+    )
+    assert dingtalk_row.startswith("| N/A |")
+    assert dingtalk_row.endswith("| N/A |")
 
 
 def test_timeline_limit_parser_clamps_and_recovers_from_invalid_values():

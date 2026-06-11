@@ -31,6 +31,7 @@ from .support import (
     encode_metadata,
     exclude_pattern_to_pathspec,
     latest_user_query,
+    metadata_from_commit_message,
     message_text,
     query_from_commit_message,
     ref_kind,
@@ -238,7 +239,11 @@ class PawGitEngine(ShadowGitRepository):
         commit = self._run_git(
             "commit-tree",
             tree,
-            input_text=f"{subject}\n\n{body}\n\n{encode_metadata(query)}\n",
+            input_text=(
+                f"{subject}\n\n{body}\n\n"
+                f"{encode_metadata(query, channel=channel, user_id=user_id, session_id=session_id)}"
+                "\n"
+            ),
         )
         self._run_git("update-ref", ref, commit)
         return ref
@@ -283,16 +288,30 @@ class PawGitEngine(ShadowGitRepository):
         if not include_all:
             refs = [item for item in refs if self._ref_session_key(item[0]) == key]
         kind_priority = {"auto": 0, "snap": 1, "pre-rewind": 2}
-        refs.sort(
+        current_refs = [item for item in refs if self._ref_session_key(item[0]) == key]
+        current_refs.sort(
             key=lambda item: (
                 kind_priority.get(self._ref_kind(item[0]), 99),
                 -self._entry_timestamp(item[0], item[1]),
             ),
         )
+        rewind_indexes = {ref: index for index, (ref, _) in enumerate(current_refs, 1)}
         entries = [
-            self._entry_from_ref(ref, commit) for ref, commit in refs[: max(1, limit)]
+            self._entry_from_ref(
+                ref,
+                commit,
+                rewind_index=rewind_indexes.get(ref),
+            )
+            for ref, commit in refs
         ]
-        return entries
+        entries.sort(
+            key=lambda entry: (
+                kind_priority.get(entry.kind, 99),
+                entry.channel,
+                -entry.timestamp_ms,
+            ),
+        )
+        return entries[: max(1, limit)]
 
     @staticmethod
     def _ref_kind(ref: str) -> str:
@@ -317,13 +336,23 @@ class PawGitEngine(ShadowGitRepository):
                 refs.append((parts[0], parts[1]))
         return refs
 
-    def _entry_from_ref(self, ref: str, commit: str) -> TimelineEntry:
+    def _entry_from_ref(
+        self,
+        ref: str,
+        commit: str,
+        *,
+        rewind_index: int | None = None,
+    ) -> TimelineEntry:
         parts = ref.split("/")
         kind = self._ref_kind(ref)
         key = self._ref_session_key(ref)
         name = "/".join(parts[3:]) if len(parts) > 3 else ""
         commit_message = self._run_git("log", "-1", "--format=%B", commit)
         subject = commit_message.splitlines()[0] if commit_message else ""
+        metadata = metadata_from_commit_message(commit_message)
+        channel = metadata.get("channel")
+        if not isinstance(channel, str) or not channel:
+            channel = key.split("-", 1)[0] if key else "unknown"
         return TimelineEntry(
             ref=ref,
             kind=kind,
@@ -333,6 +362,8 @@ class PawGitEngine(ShadowGitRepository):
             timestamp_ms=self._entry_timestamp(ref, commit),
             subject=subject,
             query=query_from_commit_message(commit_message),
+            channel=channel,
+            rewind_index=rewind_index,
         )
 
     def _latest_user_query(
@@ -504,6 +535,7 @@ class PawGitEngine(ShadowGitRepository):
                 query=query_from_commit_message(
                     self._run_git("log", "-1", "--format=%B", commit),
                 ),
+                channel=channel,
             )
         except PawGitError as exc:
             if target.isdigit():

@@ -57,6 +57,8 @@ class TimelineEntry:
     timestamp_ms: int
     subject: str
     query: str | None
+    channel: str = "unknown"
+    rewind_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -158,28 +160,44 @@ def message_text(content: object) -> str | None:
     return text or None
 
 
-def encode_metadata(query: str | None) -> str:
+def encode_metadata(
+    query: str | None,
+    *,
+    channel: str | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+) -> str:
     """Encode metadata as a single UTF-8-safe commit-message line."""
     payload = json.dumps(
-        {"query": query},
+        {
+            "query": query,
+            "channel": channel,
+            "user_id": user_id,
+            "session_id": session_id,
+        },
         ensure_ascii=False,
         separators=(",", ":"),
     )
     return f"{METADATA_PREFIX}{payload}"
 
 
-def query_from_commit_message(message: str) -> str | None:
-    """Read the latest-query field from a PawGit commit message."""
+def metadata_from_commit_message(message: str) -> dict:
+    """Read PawGit metadata from a commit message."""
     for line in reversed(message.splitlines()):
         if not line.startswith(METADATA_PREFIX):
             continue
         try:
             metadata = json.loads(line[len(METADATA_PREFIX) :])
         except json.JSONDecodeError:
-            return None
-        query = metadata.get("query")
-        return query if isinstance(query, str) and query else None
-    return None
+            return {}
+        return metadata if isinstance(metadata, dict) else {}
+    return {}
+
+
+def query_from_commit_message(message: str) -> str | None:
+    """Read the latest-query field from a PawGit commit message."""
+    query = metadata_from_commit_message(message).get("query")
+    return query if isinstance(query, str) and query else None
 
 
 def render_timeline(
@@ -195,16 +213,25 @@ def render_timeline(
         "snap": "SNAPSHOT Checkpoints",
         "pre-rewind": "PRE-REWIND Checkpoints",
     }
-    current_kind: str | None = None
-    for idx, entry in enumerate(entries, 1):
-        if entry.kind != current_kind:
-            current_kind = entry.kind
+    current_group: tuple[str, str] | None = None
+    for entry in entries:
+        group = (entry.kind, entry.channel)
+        if group != current_group:
+            if current_group is None or current_group[0] != entry.kind:
+                lines.extend(
+                    [
+                        "",
+                        f"## {group_titles.get(entry.kind, entry.kind.upper())}",
+                    ],
+                )
+            current_group = group
             lines.extend(
                 [
                     "",
-                    f"## {group_titles.get(entry.kind, entry.kind.upper())}",
+                    f"### Channel: `{entry.channel}`",
                     "",
-                    "| # | Snapshot Name | SHA | Date | Query | Rewind Way |",
+                    "| Session # | Snapshot Name | SHA | Date | Query | "
+                    "Rewind Way |",
                     "|---:|---|---|---|---|---|",
                 ],
             )
@@ -217,14 +244,20 @@ def render_timeline(
         if len(query) > query_preview_chars:
             query = query[: query_preview_chars - 3] + "..."
         query = query.replace("\\", "\\\\").replace("|", "\\|")
-        commands = [f"`/pawgit rewind {idx}`"]
-        if snapshot_name:
-            commands.append(f"`/pawgit rewind {snapshot_name}`")
-        commands.append(f"`/pawgit rewind {entry.commit[:12]}`")
+        commands: list[str] = []
+        if entry.rewind_index is not None:
+            commands.append(f"`/pawgit rewind {entry.rewind_index}`")
+            if snapshot_name:
+                commands.append(f"`/pawgit rewind {snapshot_name}`")
+            commands.append(f"`/pawgit rewind {entry.commit[:12]}`")
         snapshot = f"`{snapshot_name}`" if snapshot_name else "N/A"
+        rewind_way = "<br>".join(commands) if commands else "N/A"
+        session_index = (
+            str(entry.rewind_index) if entry.rewind_index is not None else "N/A"
+        )
         lines.append(
-            f"| {idx} | {snapshot} | `{entry.commit[:12]}` | "
-            f"{date_text} | {query} | {'<br>'.join(commands)} |",
+            f"| {session_index} | {snapshot} | `{entry.commit[:12]}` | "
+            f"{date_text} | {query} | {rewind_way} |",
         )
     return "\n".join(lines)
 
