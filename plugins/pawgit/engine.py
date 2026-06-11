@@ -10,7 +10,16 @@ import asyncio
 import time
 
 from . import support as _support
-from .repository import ShadowGitRepository
+from .repository import (
+    DEFAULT_AUTO_DEBOUNCE_SECONDS,
+    DEFAULT_GC_KEEP_COUNT,
+    DEFAULT_GC_KEEP_DAYS,
+    DEFAULT_PRE_REWIND_RETENTION_DAYS,
+    DEFAULT_QUERY_PREVIEW_CHARS,
+    DEFAULT_TIMELINE_LIMIT,
+    DEFAULT_TIMELINE_MAX_LIMIT,
+    ShadowGitRepository,
+)
 from .support import (
     SNAPSHOT_EXCLUDE_PATHSPECS,
     GcResult,
@@ -39,6 +48,76 @@ _exclude_pattern_to_pathspec = exclude_pattern_to_pathspec
 
 class PawGitEngine(ShadowGitRepository):
     """Manage a workspace's shadow git repository."""
+
+    @property
+    def auto_debounce_seconds(self) -> float:
+        return self.config_number(
+            "auto",
+            "debounce_seconds",
+            DEFAULT_AUTO_DEBOUNCE_SECONDS,
+            minimum=0.0,
+            maximum=300.0,
+        )
+
+    @property
+    def timeline_default_limit(self) -> int:
+        return self.config_number(
+            "timeline",
+            "default_limit",
+            DEFAULT_TIMELINE_LIMIT,
+            minimum=1,
+            maximum=self.timeline_max_limit,
+        )
+
+    @property
+    def timeline_max_limit(self) -> int:
+        return self.config_number(
+            "timeline",
+            "max_limit",
+            DEFAULT_TIMELINE_MAX_LIMIT,
+            minimum=1,
+            maximum=10_000,
+        )
+
+    @property
+    def query_preview_chars(self) -> int:
+        return self.config_number(
+            "display",
+            "query_preview_chars",
+            DEFAULT_QUERY_PREVIEW_CHARS,
+            minimum=20,
+            maximum=10_000,
+        )
+
+    @property
+    def gc_keep_count(self) -> int:
+        return self.config_number(
+            "gc",
+            "gc_keep_count",
+            DEFAULT_GC_KEEP_COUNT,
+            minimum=0,
+            maximum=1_000_000,
+        )
+
+    @property
+    def gc_keep_days(self) -> int:
+        return self.config_number(
+            "gc",
+            "gc_keep_days",
+            DEFAULT_GC_KEEP_DAYS,
+            minimum=0,
+            maximum=36_500,
+        )
+
+    @property
+    def pre_rewind_retention_days(self) -> int:
+        return self.config_number(
+            "gc",
+            "pre_rewind_retention_days",
+            DEFAULT_PRE_REWIND_RETENTION_DAYS,
+            minimum=0,
+            maximum=36_500,
+        )
 
     async def snapshot(
         self,
@@ -150,17 +229,21 @@ class PawGitEngine(ShadowGitRepository):
         session_id: str,
         user_id: str,
         channel: str,
-        limit: int = 20,
+        limit: int | None = None,
         include_all: bool = False,
     ) -> list[TimelineEntry]:
         """Return timeline entries grouped by kind, newest first per group."""
+        resolved_limit = (
+            self.timeline_default_limit if limit is None else limit
+        )
+        resolved_limit = max(1, min(self.timeline_max_limit, resolved_limit))
         async with self._lock:
             return await asyncio.to_thread(
                 self._timeline_sync,
                 session_id,
                 user_id,
                 channel,
-                limit,
+                resolved_limit,
                 include_all,
             )
 
@@ -345,7 +428,7 @@ class PawGitEngine(ShadowGitRepository):
             session_id,
             user_id,
             channel,
-            200,
+            self.timeline_max_limit,
             False,
         )
         key = session_key(
@@ -402,11 +485,22 @@ class PawGitEngine(ShadowGitRepository):
         compact: bool = False,
         all_sessions: bool = False,
         dry_run: bool = False,
-        keep_count: int = 30,
-        keep_days: int = 14,
-        pre_rewind_days: int = 7,
+        keep_count: int | None = None,
+        keep_days: int | None = None,
+        pre_rewind_days: int | None = None,
     ) -> GcResult:
         """Delete collectible auto/pre-rewind refs and run git gc."""
+        resolved_keep_count = (
+            self.gc_keep_count if keep_count is None else keep_count
+        )
+        resolved_keep_days = (
+            self.gc_keep_days if keep_days is None else keep_days
+        )
+        resolved_pre_days = (
+            self.pre_rewind_retention_days
+            if pre_rewind_days is None
+            else pre_rewind_days
+        )
         async with self._lock:
             return await asyncio.to_thread(
                 self._gc_sync,
@@ -416,9 +510,9 @@ class PawGitEngine(ShadowGitRepository):
                 compact,
                 all_sessions,
                 dry_run,
-                keep_count,
-                keep_days,
-                pre_rewind_days,
+                resolved_keep_count,
+                resolved_keep_days,
+                resolved_pre_days,
             )
 
     def _gc_sync(
@@ -473,7 +567,9 @@ class PawGitEngine(ShadowGitRepository):
         ]
         for ref, commit in pre_rewind_refs:
             ts = self._entry_timestamp(ref, commit)
-            if ts < pre_cutoff_ms:
+            if compact:
+                delete_refs.append(ref)
+            elif ts < pre_cutoff_ms:
                 delete_refs.append(ref)
             else:
                 keep_refs.append(ref)
@@ -489,7 +585,10 @@ class PawGitEngine(ShadowGitRepository):
         )
 
     def render_timeline(self, entries: list[TimelineEntry]) -> str:
-        return render_timeline_entries(entries)
+        return render_timeline_entries(
+            entries,
+            query_preview_chars=self.query_preview_chars,
+        )
 
     def render_rewind(self, result: RewindResult) -> str:
         return render_rewind_result(result)

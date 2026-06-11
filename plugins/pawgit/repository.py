@@ -9,8 +9,36 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, TypeVar, cast
 
 from .support import EXCLUDE_PATTERNS, PawGitError
+
+ConfigValue = TypeVar("ConfigValue", int, float)
+
+DEFAULT_GC_KEEP_COUNT = 20
+DEFAULT_GC_KEEP_DAYS = 7
+DEFAULT_PRE_REWIND_RETENTION_DAYS = 7
+DEFAULT_AUTO_DEBOUNCE_SECONDS = 1.5
+DEFAULT_TIMELINE_LIMIT = 20
+DEFAULT_TIMELINE_MAX_LIMIT = 200
+DEFAULT_QUERY_PREVIEW_CHARS = 120
+
+DEFAULT_CONFIG = f"""\
+[gc]
+gc_keep_count = {DEFAULT_GC_KEEP_COUNT}
+gc_keep_days = {DEFAULT_GC_KEEP_DAYS}
+pre_rewind_retention_days = {DEFAULT_PRE_REWIND_RETENTION_DAYS}
+
+[auto]
+debounce_seconds = {DEFAULT_AUTO_DEBOUNCE_SECONDS}
+
+[timeline]
+default_limit = {DEFAULT_TIMELINE_LIMIT}
+max_limit = {DEFAULT_TIMELINE_MAX_LIMIT}
+
+[display]
+query_preview_chars = {DEFAULT_QUERY_PREVIEW_CHARS}
+"""
 
 
 class ShadowGitRepository:
@@ -22,6 +50,8 @@ class ShadowGitRepository:
         self.git_dir = self.pawgit_dir / "shadow.git"
         self.index_file = self.pawgit_dir / "index"
         self.config_file = self.pawgit_dir / "config.toml"
+        self.config: dict[str, Any] = {}
+        self._config_mtime_ns: int | None = None
         self._lock = asyncio.Lock()
         self._ensure_repo()
 
@@ -85,14 +115,72 @@ class ShadowGitRepository:
         exclude_path.write_text("\n".join(merged) + "\n", encoding="utf-8")
         if not self.config_file.exists():
             self.config_file.write_text(
-                "[gc]\n"
-                "gc_keep_count = 30\n"
-                "gc_keep_days = 14\n"
-                "pre_rewind_retention_days = 7\n"
-                "[auto]\n"
-                "debounce_seconds = 1.5\n",
+                DEFAULT_CONFIG,
                 encoding="utf-8",
             )
+        self.reload_config(force=True)
+
+    def _load_config(self) -> dict[str, Any]:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        try:
+            with self.config_file.open("rb") as config_stream:
+                data = tomllib.load(config_stream)
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise PawGitError(
+                f"Failed to load PawGit config {self.config_file}: {exc}",
+            ) from exc
+        if not isinstance(data, dict):
+            raise PawGitError("PawGit config root must be a TOML table")
+        return data
+
+    def reload_config(self, *, force: bool = False) -> dict[str, Any]:
+        """Reload config when its modification time changes."""
+        try:
+            mtime_ns = self.config_file.stat().st_mtime_ns
+        except OSError as exc:
+            raise PawGitError(
+                f"Failed to stat PawGit config {self.config_file}: {exc}",
+            ) from exc
+        if force or mtime_ns != self._config_mtime_ns:
+            self.config = self._load_config()
+            self._config_mtime_ns = mtime_ns
+        return self.config
+
+    def config_number(
+        self,
+        section: str,
+        key: str,
+        default: ConfigValue,
+        *,
+        minimum: ConfigValue,
+        maximum: ConfigValue,
+    ) -> ConfigValue:
+        """Read and validate one numeric config value."""
+        config = self.reload_config()
+        table = config.get(section, {})
+        if not isinstance(table, dict):
+            raise PawGitError(f"Config section [{section}] must be a table")
+        value = table.get(key, default)
+        expected_type = type(default)
+        valid_type = isinstance(value, expected_type)
+        if expected_type is float:
+            valid_type = isinstance(value, (int, float))
+        if isinstance(value, bool) or not valid_type:
+            raise PawGitError(
+                f"Config {section}.{key} must be " f"{expected_type.__name__}",
+            )
+        if expected_type is float:
+            value = float(value)
+        value = cast(ConfigValue, value)
+        if value < minimum or value > maximum:
+            raise PawGitError(
+                f"Config {section}.{key} must be between "
+                f"{minimum} and {maximum}",
+            )
+        return value
 
     def _ref_exists(self, ref: str) -> bool:
         proc = subprocess.run(

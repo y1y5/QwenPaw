@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine
 
 from .engine import PawGitEngine
+from .repository import DEFAULT_AUTO_DEBOUNCE_SECONDS
 from .utils import session_key
 
 logger = logging.getLogger(__name__)
@@ -18,14 +19,18 @@ logger = logging.getLogger(__name__)
 class Debouncer:
     """Asyncio debounce helper keyed by workspace/session."""
 
-    def __init__(self, delay: float = 1.5):
-        self.delay = delay
+    def __init__(
+        self,
+        delay_time: float = DEFAULT_AUTO_DEBOUNCE_SECONDS,
+    ):
+        self.delay = delay_time
         self._pending: dict[str, asyncio.TimerHandle] = {}
 
     def schedule(
         self,
         key: str,
         coro_factory: Callable[[], Coroutine[Any, Any, None]],
+        delay: float | None = None,
     ) -> None:
         loop = asyncio.get_running_loop()
         handle = self._pending.pop(key, None)
@@ -36,7 +41,10 @@ class Debouncer:
             self._pending.pop(key, None)
             asyncio.create_task(coro_factory())
 
-        self._pending[key] = loop.call_later(self.delay, _run)
+        self._pending[key] = loop.call_later(
+            self.delay if delay is None else delay,
+            _run,
+        )
 
     async def flush(self) -> None:
         handles = list(self._pending.items())
@@ -113,7 +121,11 @@ class PawGitRegistry:
             except Exception:
                 logger.exception("PawGit auto snapshot failed")
 
-        self.debouncer.schedule(debounce_key, _snapshot)
+        self.debouncer.schedule(
+            debounce_key,
+            _snapshot,
+            delay=engine.auto_debounce_seconds,
+        )
 
     async def flush_and_close_all(self) -> None:
         self.debouncer.cancel_all()

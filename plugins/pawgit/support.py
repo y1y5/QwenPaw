@@ -181,7 +181,11 @@ def query_from_commit_message(message: str) -> str | None:
     return None
 
 
-def render_timeline(entries: list[TimelineEntry]) -> str:
+def render_timeline(
+    entries: list[TimelineEntry],
+    *,
+    query_preview_chars: int,
+) -> str:
     if not entries:
         return "No PawGit checkpoints found for this session."
     lines = ["# PawGit Timeline"]
@@ -209,8 +213,8 @@ def render_timeline(entries: list[TimelineEntry]) -> str:
         ).astimezone()
         date_text = timestamp.strftime("%Y-%m-%d %H:%M:%S %z")
         query = " ".join(entry.query.split()) if entry.query else "N/A"
-        if len(query) > 120:
-            query = query[:117] + "..."
+        if len(query) > query_preview_chars:
+            query = query[: query_preview_chars - 3] + "..."
         query = query.replace("\\", "\\\\").replace("|", "\\|")
         commands = [f"`/rewind {idx}`"]
         if snapshot_name:

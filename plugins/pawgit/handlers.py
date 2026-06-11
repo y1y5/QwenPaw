@@ -12,11 +12,11 @@ from .registry import REGISTRY
 from .utils import first_positional, parse_flags
 
 
-def _parse_limit(raw: str, default: int = 20) -> int:
+def _parse_limit(raw: str, *, default: int, maximum: int) -> int:
     for part in (raw or "").split():
         if part.startswith("--limit="):
             try:
-                return max(1, min(200, int(part.split("=", 1)[1])))
+                return max(1, min(maximum, int(part.split("=", 1)[1])))
             except ValueError:
                 return default
     return default
@@ -34,7 +34,11 @@ class TimelineCommandHandler(BaseControlCommandHandler):
             session_id=context.session_id,
             user_id=context.user_id,
             channel=context.channel.channel,
-            limit=_parse_limit(raw),
+            limit=_parse_limit(
+                raw,
+                default=engine.timeline_default_limit,
+                maximum=engine.timeline_max_limit,
+            ),
             include_all="--all" in parse_flags(raw),
         )
         return engine.render_timeline(entries)

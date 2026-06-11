@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -368,11 +368,112 @@ async def test_timeline_table_format(
 
 
 def test_timeline_limit_parser_clamps_and_recovers_from_invalid_values():
-    assert _parse_limit("") == 20
-    assert _parse_limit("--limit=5") == 5
-    assert _parse_limit("--limit=0") == 1
-    assert _parse_limit("--limit=999") == 200
-    assert _parse_limit("--limit=oops") == 20
+    options = {"default": 8, "maximum": 50}
+
+    assert _parse_limit("", **options) == 8
+    assert _parse_limit("--limit=5", **options) == 5
+    assert _parse_limit("--limit=0", **options) == 1
+    assert _parse_limit("--limit=999", **options) == 50
+    assert _parse_limit("--limit=oops", **options) == 8
+
+
+async def test_config_hot_reload_controls_timeline_and_query_preview(
+    engine: PawGitEngine,
+    tmp_path: Path,
+):
+    _write_session(
+        tmp_path,
+        queries=("abcdefghijklmnopqrstuvwxyz",),
+    )
+    await _auto_snapshot(engine)
+    await _auto_snapshot(engine)
+    await _auto_snapshot(engine)
+
+    engine.config_file.write_text(
+        """\
+[timeline]
+default_limit = 2
+max_limit = 2
+
+[display]
+query_preview_chars = 20
+""",
+        encoding="utf-8",
+    )
+
+    entries = await engine.timeline(**DEFAULT_SESSION)
+    explicitly_large = await engine.timeline(limit=99, **DEFAULT_SESSION)
+    rendered = engine.render_timeline(entries)
+
+    assert len(entries) == 2
+    assert len(explicitly_large) == 2
+    assert "abcdefghijklmnopq..." in rendered
+    assert "abcdefghijklmnopqrstuvwxyz" not in rendered
+
+
+async def test_config_hot_reload_controls_gc_policy(
+    engine: PawGitEngine,
+    tmp_path: Path,
+):
+    _write_session(tmp_path)
+    oldest = await _auto_snapshot(engine)
+    newest = await _auto_snapshot(engine)
+    engine.config_file.write_text(
+        """\
+[gc]
+gc_keep_count = 1
+gc_keep_days = 0
+pre_rewind_retention_days = 0
+""",
+        encoding="utf-8",
+    )
+
+    result = await engine.gc(dry_run=True, **DEFAULT_SESSION)
+
+    assert oldest in result.deleted_refs
+    assert newest in result.kept_refs
+
+
+def test_config_validation_and_numeric_coercion(
+    engine: PawGitEngine,
+):
+    engine.config_file.write_text(
+        "[auto]\ndebounce_seconds = 2\n",
+        encoding="utf-8",
+    )
+    assert engine.auto_debounce_seconds == 2.0
+
+    engine.config_file.write_text(
+        "[timeline]\ndefault_limit = true\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(PawGitError, match="timeline.default_limit"):
+        _ = engine.timeline_default_limit
+
+
+def test_registry_uses_configured_auto_debounce(
+    tmp_path: Path,
+):
+    from pawgit.registry import PawGitRegistry
+
+    registry = PawGitRegistry()
+    engine = registry.get_for_workspace_dir(tmp_path)
+    engine.config_file.write_text(
+        "[auto]\ndebounce_seconds = 0.25\n",
+        encoding="utf-8",
+    )
+    registry.debouncer.schedule = Mock()
+    agent = SimpleNamespace(_workspace_dir=tmp_path)
+
+    registry.schedule_auto_snapshot(
+        agent,
+        session_id="console:default",
+        user_id="default",
+        channel="console",
+    )
+
+    assert registry.debouncer.schedule.call_count == 1
+    assert registry.debouncer.schedule.call_args.kwargs["delay"] == 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +692,8 @@ async def test_slash_handlers_forward_snapshot_timeline_rewind_and_gc_flags(
     import pawgit.handlers as handlers
 
     fake = SimpleNamespace(
+        timeline_default_limit=20,
+        timeline_max_limit=200,
         snapshot=AsyncMock(return_value="snapshot-123"),
         timeline=AsyncMock(return_value=[]),
         rewind=AsyncMock(
