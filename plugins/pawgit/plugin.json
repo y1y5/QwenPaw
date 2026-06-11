@@ -1,7 +1,7 @@
 {
   "id": "pawgit",
   "name": "PawGit",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "type": "command",
   "description": "Shadow-git checkpoints and rewind for QwenPaw workspaces",
   "author": "PawGit",
@@ -12,10 +12,7 @@
   "min_version": "1.1.10",
   "meta": {
     "commands": [
-      { "name": "/timeline" },
-      { "name": "/snapshot" },
-      { "name": "/rewind" },
-      { "name": "/gc" }
+      { "name": "/pawgit" }
     ]
   }
 }

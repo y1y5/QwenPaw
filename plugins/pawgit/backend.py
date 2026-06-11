@@ -7,12 +7,7 @@ import logging
 
 from qwenpaw.plugins.api import PluginApi
 
-from .handlers import (
-    GcCommandHandler,
-    RewindCommandHandler,
-    SnapshotCommandHandler,
-    TimelineCommandHandler,
-)
+from .handlers import PawGitCommandHandler
 from .registry import REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -44,8 +39,13 @@ async def _post_reply_auto_snapshot(self_agent, kwargs, output_msg):
 
 
 async def _pre_reply_query_gate(self_agent, kwargs):
-    """Phase 1 no-op query gate placeholder for Phase 2 memory rewind."""
-    del self_agent
+    """Wait while a memory rewind has the workspace in maintenance mode."""
+    try:
+        engine = REGISTRY.get_for_agent(self_agent)
+        if engine is not None:
+            await engine.query_gate.wait()
+    except Exception:
+        logger.exception("PawGit pre_reply query gate failed")
     return kwargs
 
 
@@ -103,16 +103,13 @@ async def _teardown() -> None:
 
 
 class PawGitPlugin:
-    """Register PawGit Phase 1 capabilities."""
+    """Register PawGit checkpoint and rewind capabilities."""
 
     def register(self, api: PluginApi) -> None:
-        for handler in (
-            TimelineCommandHandler(),
-            SnapshotCommandHandler(),
-            RewindCommandHandler(),
-            GcCommandHandler(),
-        ):
-            api.register_control_command(handler, priority_level=10)
+        api.register_control_command(
+            PawGitCommandHandler(),
+            priority_level=10,
+        )
 
         api.register_startup_hook(
             "pawgit_install_hooks",

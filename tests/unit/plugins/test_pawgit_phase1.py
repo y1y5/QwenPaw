@@ -31,10 +31,8 @@ from pawgit.engine import (  # noqa: E402
     RewindResult,
 )
 from pawgit.handlers import (  # noqa: E402
-    GcCommandHandler,
-    RewindCommandHandler,
-    SnapshotCommandHandler,
-    TimelineCommandHandler,
+    PAWGIT_HELP,
+    PawGitCommandHandler,
     _parse_limit,
 )
 
@@ -53,9 +51,7 @@ def _session_path(
     session_id: str = "console:default",
 ) -> Path:
     directory = workspace / "sessions" / sanitize_filename(channel)
-    filename = (
-        f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
-    )
+    filename = f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
     return directory / filename
 
 
@@ -233,7 +229,7 @@ async def test_snapshots_are_parentless_and_packed_refs_remain_visible(
 
 
 # ---------------------------------------------------------------------------
-# /snapshot
+# /pawgit snapshot
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +268,7 @@ async def test_snapshot_with_message_uses_sanitized_unique_name(
 
 
 # ---------------------------------------------------------------------------
-# /timeline
+# /pawgit timeline
 # ---------------------------------------------------------------------------
 
 
@@ -307,8 +303,7 @@ async def test_timeline_current_session_and_groups(
         "pre-rewind",
     ]
     assert all(
-        entry.session_key == "console-default-console--default"
-        for entry in entries
+        entry.session_key == "console-default-console--default" for entry in entries
     )
 
 
@@ -357,13 +352,11 @@ async def test_timeline_table_format(
     assert "## AUTO Checkpoints" in rendered
     assert "## SNAPSHOT Checkpoints" in rendered
     assert "## PRE-REWIND Checkpoints" in rendered
-    assert "| # | Snapshot | SHA | Date | Query | Rewind |" in rendered
+    assert "| # | Snapshot Name | SHA | Date | Query | Rewind Way |" in rendered
     assert "query with \\| pipe and newline" in rendered
-    assert "`/rewind 1`" in rendered
-    assert f"`/rewind {snap_name}`" in rendered
-    assert all(
-        f"`/rewind {entry.commit[:12]}`" in rendered for entry in entries
-    )
+    assert "`/pawgit rewind 1`" in rendered
+    assert f"`/pawgit rewind {snap_name}`" in rendered
+    assert all(f"`/pawgit rewind {entry.commit[:12]}`" in rendered for entry in entries)
     assert "+0" in rendered or "-0" in rendered
 
 
@@ -477,7 +470,7 @@ def test_registry_uses_configured_auto_debounce(
 
 
 # ---------------------------------------------------------------------------
-# /rewind
+# /pawgit rewind
 # ---------------------------------------------------------------------------
 
 
@@ -595,7 +588,7 @@ async def test_rewind_dry_run_does_not_modify_file_or_create_pre_rewind(
 
 
 # ---------------------------------------------------------------------------
-# /gc
+# /pawgit gc
 # ---------------------------------------------------------------------------
 
 
@@ -676,9 +669,7 @@ async def test_gc_all_sessions_and_pre_rewind_retention(
 
     assert console_auto in result.deleted_refs
     assert ding_auto in result.deleted_refs
-    assert any(
-        ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs
-    )
+    assert any(ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs)
 
 
 # ---------------------------------------------------------------------------
@@ -686,7 +677,7 @@ async def test_gc_all_sessions_and_pre_rewind_retention(
 # ---------------------------------------------------------------------------
 
 
-async def test_slash_handlers_forward_snapshot_timeline_rewind_and_gc_flags(
+async def test_pawgit_subcommands_forward_all_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ):
     import pawgit.handlers as handlers
@@ -722,22 +713,21 @@ async def test_slash_handlers_forward_snapshot_timeline_rewind_and_gc_flags(
         lambda workspace: fake,
     )
 
-    snapshot_output = await SnapshotCommandHandler().handle(
-        _control_context("release v1"),
+    handler = PawGitCommandHandler()
+    snapshot_output = await handler.handle(
+        _control_context("snapshot release v1"),
     )
-    timeline_output = await TimelineCommandHandler().handle(
-        _control_context("--limit=7 --all"),
+    timeline_output = await handler.handle(
+        _control_context("timeline --limit=7 --all"),
     )
-    rewind_output = await RewindCommandHandler().handle(
-        _control_context("abc --dry-run"),
+    rewind_output = await handler.handle(
+        _control_context("rewind abc --dry-run"),
     )
-    gc_output = await GcCommandHandler().handle(
-        _control_context("--compact --all-sessions --dry-run"),
+    gc_output = await handler.handle(
+        _control_context("gc --compact --all-sessions --dry-run"),
     )
 
-    assert (
-        snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
-    )
+    assert snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
     fake.snapshot.assert_awaited_once_with(
         session_id="console:default",
         user_id="default",
@@ -769,3 +759,31 @@ async def test_slash_handlers_forward_snapshot_timeline_rewind_and_gc_flags(
         all_sessions=True,
         dry_run=True,
     )
+
+
+async def test_pawgit_help_and_unknown_subcommand():
+    handler = PawGitCommandHandler()
+
+    assert await handler.handle(_control_context("")) == PAWGIT_HELP
+    assert await handler.handle(_control_context("--help")) == PAWGIT_HELP
+    assert await handler.handle(_control_context("help")) == PAWGIT_HELP
+    unknown = await handler.handle(_control_context("wat"))
+    assert unknown.startswith("**Unknown PawGit subcommand:** `wat`")
+    assert "/pawgit timeline" in unknown
+
+
+def test_plugin_registers_only_unified_pawgit_command():
+    import pawgit.backend as plugin_backend
+
+    api = SimpleNamespace(
+        register_control_command=Mock(),
+        register_startup_hook=Mock(),
+        register_shutdown_hook=Mock(),
+    )
+
+    plugin_backend.PawGitPlugin().register(api)
+
+    api.register_control_command.assert_called_once()
+    handler = api.register_control_command.call_args.args[0]
+    assert isinstance(handler, PawGitCommandHandler)
+    assert handler.command_name == "/pawgit"

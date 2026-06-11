@@ -61,13 +61,14 @@ class TimelineEntry:
 
 @dataclass(frozen=True)
 class RewindResult:
-    """Result of a conv-only rewind."""
+    """Result of a conversation or memory rewind."""
 
     target: str
     commit: str
     restored_paths: tuple[str, ...]
     pre_rewind_ref: str | None
     dry_run: bool
+    include_memory: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,7 +204,7 @@ def render_timeline(
                     "",
                     f"## {group_titles.get(entry.kind, entry.kind.upper())}",
                     "",
-                    "| # | Snapshot | SHA | Date | Query | Rewind |",
+                    "| # | Snapshot Name | SHA | Date | Query | Rewind Way |",
                     "|---:|---|---|---|---|---|",
                 ],
             )
@@ -216,10 +217,10 @@ def render_timeline(
         if len(query) > query_preview_chars:
             query = query[: query_preview_chars - 3] + "..."
         query = query.replace("\\", "\\\\").replace("|", "\\|")
-        commands = [f"`/rewind {idx}`"]
+        commands = [f"`/pawgit rewind {idx}`"]
         if snapshot_name:
-            commands.append(f"`/rewind {snapshot_name}`")
-        commands.append(f"`/rewind {entry.commit[:12]}`")
+            commands.append(f"`/pawgit rewind {snapshot_name}`")
+        commands.append(f"`/pawgit rewind {entry.commit[:12]}`")
         snapshot = f"`{snapshot_name}`" if snapshot_name else "N/A"
         lines.append(
             f"| {idx} | {snapshot} | `{entry.commit[:12]}` | "
@@ -231,6 +232,8 @@ def render_timeline(
 def render_rewind(result: RewindResult) -> str:
     mode = "Dry run" if result.dry_run else "Rewind complete"
     lines = [f"**PawGit {mode}**"]
+    scope = "Conversation + memory" if result.include_memory else "Conversation"
+    lines.append(f"- Scope: {scope}")
     lines.append(f"- Target: `{result.target}`")
     lines.append(f"- Commit: `{result.commit[:12]}`")
     lines.append(
@@ -238,6 +241,11 @@ def render_rewind(result: RewindResult) -> str:
     )
     if result.pre_rewind_ref:
         lines.append(f"- Safety ref: `{result.pre_rewind_ref}`")
+    if result.include_memory and not result.dry_run:
+        lines.append(
+            "- Memory search index: updates asynchronously from restored "
+            "source files",
+        )
     return "\n".join(lines)
 
 

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 
 from . import support as _support
 from .repository import (
     DEFAULT_AUTO_DEBOUNCE_SECONDS,
     DEFAULT_GC_KEEP_COUNT,
     DEFAULT_GC_KEEP_DAYS,
+    DEFAULT_MEMORY_QUIESCE_TIMEOUT,
     DEFAULT_PRE_REWIND_RETENTION_DAYS,
     DEFAULT_QUERY_PREVIEW_CHARS,
     DEFAULT_TIMELINE_LIMIT,
@@ -48,6 +50,13 @@ _exclude_pattern_to_pathspec = exclude_pattern_to_pathspec
 
 class PawGitEngine(ShadowGitRepository):
     """Manage a workspace's shadow git repository."""
+
+    def __init__(self, workspace_dir: str | Path):
+        super().__init__(workspace_dir)
+        self.workspace = None
+        self.query_gate = asyncio.Event()
+        self.query_gate.set()
+        self.maintenance_lock = asyncio.Lock()
 
     @property
     def auto_debounce_seconds(self) -> float:
@@ -119,6 +128,16 @@ class PawGitEngine(ShadowGitRepository):
             maximum=36_500,
         )
 
+    @property
+    def memory_quiesce_timeout(self) -> float:
+        return self.config_number(
+            "safety",
+            "include_memory_quiesce_timeout",
+            DEFAULT_MEMORY_QUIESCE_TIMEOUT,
+            minimum=1.0,
+            maximum=600.0,
+        )
+
     async def snapshot(
         self,
         *,
@@ -151,16 +170,17 @@ class PawGitEngine(ShadowGitRepository):
         """Create a parentless full-workspace snapshot and return its ref."""
         if kind not in {"auto", "snap", "pre-rewind"}:
             raise ValueError(f"Unsupported snapshot kind: {kind}")
-        async with self._lock:
-            return await asyncio.to_thread(
-                self._make_snapshot_sync,
-                kind,
-                session_id,
-                user_id,
-                channel,
-                name,
-                message,
-            )
+        async with self.maintenance_lock:
+            async with self._lock:
+                return await asyncio.to_thread(
+                    self._make_snapshot_sync,
+                    kind,
+                    session_id,
+                    user_id,
+                    channel,
+                    name,
+                    message,
+                )
 
     def _make_snapshot_sync(
         self,
@@ -233,19 +253,18 @@ class PawGitEngine(ShadowGitRepository):
         include_all: bool = False,
     ) -> list[TimelineEntry]:
         """Return timeline entries grouped by kind, newest first per group."""
-        resolved_limit = (
-            self.timeline_default_limit if limit is None else limit
-        )
+        resolved_limit = self.timeline_default_limit if limit is None else limit
         resolved_limit = max(1, min(self.timeline_max_limit, resolved_limit))
-        async with self._lock:
-            return await asyncio.to_thread(
-                self._timeline_sync,
-                session_id,
-                user_id,
-                channel,
-                resolved_limit,
-                include_all,
-            )
+        async with self.maintenance_lock:
+            async with self._lock:
+                return await asyncio.to_thread(
+                    self._timeline_sync,
+                    session_id,
+                    user_id,
+                    channel,
+                    resolved_limit,
+                    include_all,
+                )
 
     def _timeline_sync(
         self,
@@ -262,9 +281,7 @@ class PawGitEngine(ShadowGitRepository):
         )
         refs = self._list_pawgit_refs()
         if not include_all:
-            refs = [
-                item for item in refs if self._ref_session_key(item[0]) == key
-            ]
+            refs = [item for item in refs if self._ref_session_key(item[0]) == key]
         kind_priority = {"auto": 0, "snap": 1, "pre-rewind": 2}
         refs.sort(
             key=lambda item: (
@@ -273,8 +290,7 @@ class PawGitEngine(ShadowGitRepository):
             ),
         )
         entries = [
-            self._entry_from_ref(ref, commit)
-            for ref, commit in refs[: max(1, limit)]
+            self._entry_from_ref(ref, commit) for ref, commit in refs[: max(1, limit)]
         ]
         return entries
 
@@ -351,9 +367,7 @@ class PawGitEngine(ShadowGitRepository):
             if maybe_ts.isdigit():
                 return int(maybe_ts)
         try:
-            return (
-                int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
-            )
+            return int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
         except PawGitError:
             return 0
 
@@ -369,17 +383,18 @@ class PawGitEngine(ShadowGitRepository):
         """Conv-only rewind to a timeline index, snapshot name, ref, or SHA."""
         if not target:
             raise PawGitError(
-                "Usage: /rewind <N | snap_name | sha> [--dry-run]",
+                "Usage: /pawgit rewind <N | snap_name | sha> [--dry-run]",
             )
-        async with self._lock:
-            return await asyncio.to_thread(
-                self._rewind_sync,
-                target,
-                session_id,
-                user_id,
-                channel,
-                dry_run,
-            )
+        async with self.maintenance_lock:
+            async with self._lock:
+                return await asyncio.to_thread(
+                    self._rewind_sync,
+                    target,
+                    session_id,
+                    user_id,
+                    channel,
+                    dry_run,
+                )
 
     def _rewind_sync(
         self,
@@ -414,6 +429,27 @@ class PawGitEngine(ShadowGitRepository):
             commit=entry.commit,
             restored_paths=(rel,),
             pre_rewind_ref=pre_ref,
+            dry_run=dry_run,
+        )
+
+    async def rewind_with_memory(
+        self,
+        *,
+        target: str | None,
+        session_id: str,
+        user_id: str,
+        channel: str,
+        dry_run: bool = False,
+    ) -> RewindResult:
+        """Rewind conversation and memory sources as one transaction."""
+        from .memory_rewind import MemoryRewindCoordinator
+
+        coordinator = MemoryRewindCoordinator(self, self.workspace)
+        return await coordinator.rewind(
+            target=target,
+            session_id=session_id,
+            user_id=user_id,
+            channel=channel,
             dry_run=dry_run,
         )
 
@@ -490,30 +526,27 @@ class PawGitEngine(ShadowGitRepository):
         pre_rewind_days: int | None = None,
     ) -> GcResult:
         """Delete collectible auto/pre-rewind refs and run git gc."""
-        resolved_keep_count = (
-            self.gc_keep_count if keep_count is None else keep_count
-        )
-        resolved_keep_days = (
-            self.gc_keep_days if keep_days is None else keep_days
-        )
+        resolved_keep_count = self.gc_keep_count if keep_count is None else keep_count
+        resolved_keep_days = self.gc_keep_days if keep_days is None else keep_days
         resolved_pre_days = (
             self.pre_rewind_retention_days
             if pre_rewind_days is None
             else pre_rewind_days
         )
-        async with self._lock:
-            return await asyncio.to_thread(
-                self._gc_sync,
-                session_id,
-                user_id,
-                channel,
-                compact,
-                all_sessions,
-                dry_run,
-                resolved_keep_count,
-                resolved_keep_days,
-                resolved_pre_days,
-            )
+        async with self.maintenance_lock:
+            async with self._lock:
+                return await asyncio.to_thread(
+                    self._gc_sync,
+                    session_id,
+                    user_id,
+                    channel,
+                    compact,
+                    all_sessions,
+                    dry_run,
+                    resolved_keep_count,
+                    resolved_keep_days,
+                    resolved_pre_days,
+                )
 
     def _gc_sync(
         self,

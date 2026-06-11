@@ -71,7 +71,9 @@ class PawGitRegistry:
         self.debouncer = Debouncer()
 
     def get_for_workspace(self, workspace) -> PawGitEngine:
-        return self._get(str(workspace.workspace_dir))
+        engine = self._get(str(workspace.workspace_dir))
+        engine.workspace = workspace
+        return engine
 
     def get_for_agent(self, agent) -> PawGitEngine | None:
         workspace_dir = getattr(agent, "_workspace_dir", None)
@@ -117,6 +119,11 @@ class PawGitRegistry:
                     user_id=user_id,
                     channel=channel,
                     message="Auto checkpoint after reply",
+                )
+                await engine.gc(
+                    session_id=session_id,
+                    user_id=user_id,
+                    channel=channel,
                 )
             except Exception:
                 logger.exception("PawGit auto snapshot failed")
