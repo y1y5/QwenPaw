@@ -140,7 +140,7 @@ Memory rewind 恢复：
 
 ## 快照内容
 
-每个检查点都是一个无父提交的完整 workspace 快照。PawGit 每次都会从空索引
+每个检查点都是一个**无父**提交的完整 workspace 快照。PawGit 每次都会从空索引
 重建快照，并使用 `git add -f` 绕过 workspace 内所有 `.gitignore`。
 
 以下内容默认排除：
@@ -226,7 +226,10 @@ include_memory_quiesce_timeout = 30.0
 | `safety.include_memory_quiesce_timeout` | Memory rewind 等待其他任务退出的最长秒数 |
 
 
-命令行参数只影响当前调用。例如，`/pawgit timeline --limit=N` 会覆盖
+1. `gc.gc_keep_count`和`gc.gc_keep_days`可以配合使用，`/pawgit gc`命令会保留
+**最新的`gc.gc_keep_count`个检查点 以及 `gc.gc_keep_days`窗口内的检查点**。
+
+2. 命令行参数只影响当前调用。例如，`/pawgit timeline --limit=N` 会覆盖
 `timeline.default_limit`，但不会修改 `config.toml`。
 
 ## 模块结构

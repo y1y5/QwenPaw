@@ -1,9 +1,9 @@
 {
   "id": "pawgit",
   "name": "PawGit",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "command",
-  "description": "QwenPaw会话状态控制插件，支持会话快照、回滚等操作。",
+  "description": "QwenPaw会话状态版本控制插件，支持会话快照、回滚等操作。",
   "author": "PawGit",
   "entry": {
     "backend": "backend.py"

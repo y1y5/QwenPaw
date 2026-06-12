@@ -46,16 +46,6 @@ class Debouncer:
             _run,
         )
 
-    async def flush(self) -> None:
-        handles = list(self._pending.items())
-        self._pending.clear()
-        tasks = []
-        for _, handle in handles:
-            if not handle.cancelled():
-                handle.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
     def cancel_all(self) -> None:
         for handle in self._pending.values():
             handle.cancel()
