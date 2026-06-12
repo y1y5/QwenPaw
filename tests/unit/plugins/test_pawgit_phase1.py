@@ -51,7 +51,9 @@ def _session_path(
     session_id: str = "console:default",
 ) -> Path:
     directory = workspace / "sessions" / sanitize_filename(channel)
-    filename = f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
+    filename = (
+        f"{sanitize_filename(user_id)}_{sanitize_filename(session_id)}.json"
+    )
     return directory / filename
 
 
@@ -303,7 +305,8 @@ async def test_timeline_current_session_and_groups(
         "pre-rewind",
     ]
     assert all(
-        entry.session_key == "console-default-console--default" for entry in entries
+        entry.session_key == "console-default-console--default"
+        for entry in entries
     )
 
 
@@ -352,12 +355,18 @@ async def test_timeline_table_format(
     assert "## AUTO Checkpoints" in rendered
     assert "## SNAPSHOT Checkpoints" in rendered
     assert "## PRE-REWIND Checkpoints" in rendered
-    assert "| Session # | Snapshot Name | SHA | Date | Query | Rewind Way |" in rendered
+    assert (
+        "| Session # | Snapshot Name | SHA | Date | Query | Rewind Way |"
+        in rendered
+    )
     assert "### Channel: `console`" in rendered
     assert "query with \\| pipe and newline" in rendered
     assert "`/pawgit rewind 1`" in rendered
     assert f"`/pawgit rewind {snap_name}`" in rendered
-    assert all(f"`/pawgit rewind {entry.commit[:12]}`" in rendered for entry in entries)
+    assert all(
+        f"`/pawgit rewind {entry.commit[:12]}`" in rendered
+        for entry in entries
+    )
     assert "+0" in rendered or "-0" in rendered
 
 
@@ -383,8 +392,12 @@ async def test_timeline_all_groups_channels_and_hides_foreign_rewind_ways(
 
     entries = await engine.timeline(include_all=True, **DEFAULT_SESSION)
     rendered = engine.render_timeline(entries)
-    console_entry = next(entry for entry in entries if entry.ref == console_ref)
-    dingtalk_entry = next(entry for entry in entries if entry.ref == dingtalk_ref)
+    console_entry = next(
+        entry for entry in entries if entry.ref == console_ref
+    )
+    dingtalk_entry = next(
+        entry for entry in entries if entry.ref == dingtalk_ref
+    )
 
     assert "### Channel: `console`" in rendered
     assert "### Channel: `dingtalk`" in rendered
@@ -710,7 +723,9 @@ async def test_gc_all_sessions_and_pre_rewind_retention(
 
     assert console_auto in result.deleted_refs
     assert ding_auto in result.deleted_refs
-    assert any(ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs)
+    assert any(
+        ref.startswith("refs/pre-rewind/") for ref in result.deleted_refs
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -768,7 +783,9 @@ async def test_pawgit_subcommands_forward_all_arguments(
         _control_context("gc --compact --all-sessions --dry-run"),
     )
 
-    assert snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
+    assert (
+        snapshot_output == "Permanent PawGit snapshot created: `snapshot-123`"
+    )
     fake.snapshot.assert_awaited_once_with(
         session_id="console:default",
         user_id="default",

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""PawGit shadow-git engine for Phase 1."""
+"""PawGit shadow Git checkpoint and rewind engine."""
 
-# Internal sync methods mirror their async entry points for asyncio.to_thread.
+# Synchronous helpers are run through asyncio.to_thread.
 # pylint: disable=too-many-arguments
 
 from __future__ import annotations
@@ -42,10 +42,9 @@ from .support import (
 )
 from .utils import sanitize_ref_component, session_file_path, session_key
 
-# Public compatibility exports retained for existing integrations and tests.
+# Keep legacy import paths stable.
 EXCLUDE_PATTERNS = _support.EXCLUDE_PATTERNS
 
-# Backward-compatible alias used by existing tests and integrations.
 _exclude_pattern_to_pathspec = exclude_pattern_to_pathspec
 
 
@@ -216,9 +215,8 @@ class PawGitEngine(ShadowGitRepository):
             ref = f"refs/pre-rewind/{now_ms}-{key}"
             subject = f"pre-rewind {key} {now_ms}"
 
-        # PawGit owns its snapshot boundary. Rebuild the parentless snapshot
-        # index from scratch, bypassing every workspace .gitignore (including
-        # nested coding_projects repos) while retaining PawGit exclusions.
+        # Start from an empty index so workspace .gitignore files cannot
+        # change PawGit's snapshot boundary.
         self._run_git("read-tree", "--empty")
         self._run_git(
             "add",
@@ -236,14 +234,16 @@ class PawGitEngine(ShadowGitRepository):
             user_id=user_id,
             channel=channel,
         )
+        metadata = encode_metadata(
+            query,
+            channel=channel,
+            user_id=user_id,
+            session_id=session_id,
+        )
         commit = self._run_git(
             "commit-tree",
             tree,
-            input_text=(
-                f"{subject}\n\n{body}\n\n"
-                f"{encode_metadata(query, channel=channel, user_id=user_id, session_id=session_id)}"
-                "\n"
-            ),
+            input_text=f"{subject}\n\n{body}\n\n{metadata}\n",
         )
         self._run_git("update-ref", ref, commit)
         return ref
@@ -258,7 +258,9 @@ class PawGitEngine(ShadowGitRepository):
         include_all: bool = False,
     ) -> list[TimelineEntry]:
         """Return timeline entries grouped by kind, newest first per group."""
-        resolved_limit = self.timeline_default_limit if limit is None else limit
+        resolved_limit = (
+            self.timeline_default_limit if limit is None else limit
+        )
         resolved_limit = max(1, min(self.timeline_max_limit, resolved_limit))
         async with self.maintenance_lock:
             async with self._lock:
@@ -286,16 +288,22 @@ class PawGitEngine(ShadowGitRepository):
         )
         refs = self._list_pawgit_refs()
         if not include_all:
-            refs = [item for item in refs if self._ref_session_key(item[0]) == key]
+            refs = [
+                item for item in refs if self._ref_session_key(item[0]) == key
+            ]
         kind_priority = {"auto": 0, "snap": 1, "pre-rewind": 2}
-        current_refs = [item for item in refs if self._ref_session_key(item[0]) == key]
+        current_refs = [
+            item for item in refs if self._ref_session_key(item[0]) == key
+        ]
         current_refs.sort(
             key=lambda item: (
                 kind_priority.get(self._ref_kind(item[0]), 99),
                 -self._entry_timestamp(item[0], item[1]),
             ),
         )
-        rewind_indexes = {ref: index for index, (ref, _) in enumerate(current_refs, 1)}
+        rewind_indexes = {
+            ref: index for index, (ref, _) in enumerate(current_refs, 1)
+        }
         entries = [
             self._entry_from_ref(
                 ref,
@@ -398,7 +406,9 @@ class PawGitEngine(ShadowGitRepository):
             if maybe_ts.isdigit():
                 return int(maybe_ts)
         try:
-            return int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
+            return (
+                int(self._run_git("show", "-s", "--format=%ct", commit)) * 1000
+            )
         except PawGitError:
             return 0
 
@@ -411,7 +421,7 @@ class PawGitEngine(ShadowGitRepository):
         channel: str,
         dry_run: bool = False,
     ) -> RewindResult:
-        """Conv-only rewind to a timeline index, snapshot name, ref, or SHA."""
+        """Rewind by timeline index, snapshot name, ref, or SHA."""
         if not target:
             raise PawGitError(
                 "Usage: /pawgit rewind <N | snap_name | sha> [--dry-run]",
@@ -558,8 +568,12 @@ class PawGitEngine(ShadowGitRepository):
         pre_rewind_days: int | None = None,
     ) -> GcResult:
         """Delete collectible auto/pre-rewind refs and run git gc."""
-        resolved_keep_count = self.gc_keep_count if keep_count is None else keep_count
-        resolved_keep_days = self.gc_keep_days if keep_days is None else keep_days
+        resolved_keep_count = (
+            self.gc_keep_count if keep_count is None else keep_count
+        )
+        resolved_keep_days = (
+            self.gc_keep_days if keep_days is None else keep_days
+        )
         resolved_pre_days = (
             self.pre_rewind_retention_days
             if pre_rewind_days is None

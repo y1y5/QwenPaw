@@ -214,16 +214,22 @@ def render_timeline(
         "pre-rewind": "PRE-REWIND Checkpoints",
     }
     current_group: tuple[str, str] | None = None
+    previous_kind: str | None = None
     for entry in entries:
         group = (entry.kind, entry.channel)
         if group != current_group:
-            if current_group is None or current_group[0] != entry.kind:
+            if previous_kind != entry.kind:
+                group_title = group_titles.get(
+                    entry.kind,
+                    entry.kind.upper(),
+                )
                 lines.extend(
                     [
                         "",
-                        f"## {group_titles.get(entry.kind, entry.kind.upper())}",
+                        f"## {group_title}",
                     ],
                 )
+            previous_kind = entry.kind
             current_group = group
             lines.extend(
                 [
@@ -253,7 +259,9 @@ def render_timeline(
         snapshot = f"`{snapshot_name}`" if snapshot_name else "N/A"
         rewind_way = "<br>".join(commands) if commands else "N/A"
         session_index = (
-            str(entry.rewind_index) if entry.rewind_index is not None else "N/A"
+            str(entry.rewind_index)
+            if entry.rewind_index is not None
+            else "N/A"
         )
         lines.append(
             f"| {session_index} | {snapshot} | `{entry.commit[:12]}` | "
@@ -265,7 +273,9 @@ def render_timeline(
 def render_rewind(result: RewindResult) -> str:
     mode = "Dry run" if result.dry_run else "Rewind complete"
     lines = [f"**PawGit {mode}**"]
-    scope = "Conversation + memory" if result.include_memory else "Conversation"
+    scope = (
+        "Conversation + memory" if result.include_memory else "Conversation"
+    )
     lines.append(f"- Scope: {scope}")
     lines.append(f"- Target: `{result.target}`")
     lines.append(f"- Commit: `{result.commit[:12]}`")

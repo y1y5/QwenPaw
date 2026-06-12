@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Transactional conversation and memory source rewind coordination."""
+"""Conversation and memory-source rewind coordination."""
 
-# The coordinator uses PawGit engine internals to keep one maintenance
-# transaction across snapshot resolution, restore, and rollback.
+# The coordinator owns the resolution, restore, and rollback transaction.
 # pylint: disable=protected-access
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ MEMORY_PATHS = ("MEMORY.md", "memory")
 
 
 class MemoryRewindCoordinator:
-    """Run the Phase 2 memory rewind consistency protocol."""
+    """Coordinate a memory-source rewind transaction."""
 
     def __init__(self, engine, workspace: Any):
         self.engine = engine
@@ -271,7 +270,7 @@ class MemoryRewindCoordinator:
         if cron is None or not getattr(cron, "_started", False):
             return False
         await cron.stop()
-        # AsyncIOScheduler.shutdown is dispatched onto the event loop.
+        # Let AsyncIOScheduler's shutdown callback run before continuing.
         await asyncio.sleep(0)
         return True
 

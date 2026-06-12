@@ -11,20 +11,24 @@ from qwenpaw.app.runner.control_commands.base import (
 from .registry import REGISTRY
 from .utils import first_positional, parse_flags
 
-PAWGIT_HELP = """\
-# PawGit
-
-| Command | Description |
-|---|---|
-| `/pawgit timeline [--limit=N] [--all]` | Show checkpoints for this session. |
-| `/pawgit snapshot [message]` | Create a permanent named checkpoint. |
-| `/pawgit rewind <N\\|snap_name\\|sha> [--dry-run]` | Restore this conversation. |
-| `/pawgit rewind <target> --include-memory [--dry-run\\|--confirm]` | Restore this conversation and memory source files. |
-| `/pawgit gc [--compact] [--all-sessions] [--dry-run]` | Clean collectible checkpoints. |
-| `/pawgit --help` | Show this help. |
-
-Memory rewind requires `--confirm` unless `--dry-run` is used.
-"""
+PAWGIT_HELP = (
+    "# PawGit\n\n"
+    "| Command | Description |\n"
+    "|---|---|\n"
+    "| `/pawgit timeline [--limit=N] [--all]` "
+    "| Show checkpoints for this session. |\n"
+    "| `/pawgit snapshot [message]` "
+    "| Create a permanent named checkpoint. |\n"
+    "| `/pawgit rewind <N\\|snap_name\\|sha> [--dry-run]` "
+    "| Restore this conversation. |\n"
+    "| `/pawgit rewind <target> --include-memory "
+    "[--dry-run\\|--confirm]` "
+    "| Restore this conversation and memory source files. |\n"
+    "| `/pawgit gc [--compact] [--all-sessions] [--dry-run]` "
+    "| Clean collectible checkpoints. |\n"
+    "| `/pawgit --help` | Show this help. |\n\n"
+    "Memory rewind requires `--confirm` unless `--dry-run` is used.\n"
+)
 
 
 def _parse_limit(raw: str, *, default: int, maximum: int) -> int:
@@ -63,7 +67,10 @@ class PawGitCommandHandler(BaseControlCommandHandler):
             return await self._rewind(context, subargs)
         if subcommand == "gc":
             return await self._gc(context, subargs)
-        return f"**Unknown PawGit subcommand:** `{subcommand}`\n\n" f"{PAWGIT_HELP}"
+        return (
+            f"**Unknown PawGit subcommand:** `{subcommand}`\n\n"
+            f"{PAWGIT_HELP}"
+        )
 
     @staticmethod
     async def _timeline(context: ControlContext, raw: str) -> str:

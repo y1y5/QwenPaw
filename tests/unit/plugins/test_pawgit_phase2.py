@@ -211,9 +211,13 @@ async def test_include_memory_rewinds_sources_without_touching_search_index(
     result = await engine.rewind_with_memory(target=name, **SESSION)
 
     assert (tmp_path / "MEMORY.md").read_text(encoding="utf-8") == "checkpoint"
-    assert (tmp_path / "memory" / "note.md").read_text(encoding="utf-8") == "checkpoint"
+    assert (tmp_path / "memory" / "note.md").read_text(
+        encoding="utf-8"
+    ) == "checkpoint"
     assert not (tmp_path / "memory" / "new.md").exists()
-    assert json.loads(_session_path(tmp_path).read_text())["value"] == ("checkpoint")
+    assert json.loads(_session_path(tmp_path).read_text())["value"] == (
+        "checkpoint"
+    )
     assert (tmp_path / "file_store" / "stale").read_text() == "old"
     assert (tmp_path / ".reme_store_old").exists()
     assert not old_manager.closed
@@ -385,7 +389,9 @@ async def test_restore_failure_rolls_back_sources(
         await engine.rewind_with_memory(target=name, **SESSION)
 
     assert (tmp_path / "MEMORY.md").read_text() == "current"
-    assert json.loads(_session_path(tmp_path).read_text())["value"] == "current"
+    assert (
+        json.loads(_session_path(tmp_path).read_text())["value"] == "current"
+    )
     assert not workspace.memory_manager.closed
     assert workspace._service_manager.start_count == 0
     assert engine.query_gate.is_set()

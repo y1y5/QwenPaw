@@ -171,7 +171,7 @@ __pycache__/
 <workspace>/.pawgit/
 |-- shadow.git/    # 独立 bare Git 仓库，即 GIT_DIR
 |-- index          # 独立 Git index，即 GIT_INDEX_FILE
-`-- config.toml    # workspace 级运行配置
+|-- config.toml    # workspace 级运行配置
 ```
 
 Ref 分类：
@@ -226,7 +226,7 @@ include_memory_quiesce_timeout = 30.0
 | `safety.include_memory_quiesce_timeout` | Memory rewind 等待其他任务退出的最长秒数 |
 
 
-命令行参数只影响当前调用。例如，`/pawgit timeline --limit=N` 会覆盖  
+命令行参数只影响当前调用。例如，`/pawgit timeline --limit=N` 会覆盖
 `timeline.default_limit`，但不会修改 `config.toml`。
 
 ## 模块结构
