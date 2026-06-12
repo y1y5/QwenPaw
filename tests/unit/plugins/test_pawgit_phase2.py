@@ -212,7 +212,7 @@ async def test_include_memory_rewinds_sources_without_touching_search_index(
 
     assert (tmp_path / "MEMORY.md").read_text(encoding="utf-8") == "checkpoint"
     assert (tmp_path / "memory" / "note.md").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     ) == "checkpoint"
     assert not (tmp_path / "memory" / "new.md").exists()
     assert json.loads(_session_path(tmp_path).read_text())["value"] == (
