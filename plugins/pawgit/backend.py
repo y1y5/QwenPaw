@@ -9,6 +9,7 @@ from qwenpaw.plugins.api import PluginApi
 
 from .handlers import PawGitCommandHandler
 from .registry import REGISTRY
+from .repository import ensure_git_available
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def _install_agent_hooks() -> None:
     global _HOOKS_INSTALLED
     if _HOOKS_INSTALLED:
         return
+    ensure_git_available()
     try:
         from qwenpaw.agents.react_agent import QwenPawAgent
 

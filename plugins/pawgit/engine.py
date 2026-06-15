@@ -196,6 +196,7 @@ class PawGitEngine(ShadowGitRepository):
             user_id=user_id,
             session_id=session_id,
         )
+        parent_commit = self._session_head(key)
         now_ms = int(time.time() * 1000)
         if kind == "auto":
             ref = f"refs/auto/{key}/{now_ms}"
@@ -239,6 +240,7 @@ class PawGitEngine(ShadowGitRepository):
             channel=channel,
             user_id=user_id,
             session_id=session_id,
+            parent_commit=parent_commit,
         )
         commit = self._run_git(
             "commit-tree",
@@ -246,6 +248,7 @@ class PawGitEngine(ShadowGitRepository):
             input_text=f"{subject}\n\n{body}\n\n{metadata}\n",
         )
         self._run_git("update-ref", ref, commit)
+        self._set_session_head(key, commit)
         return ref
 
     async def timeline(
@@ -304,11 +307,20 @@ class PawGitEngine(ShadowGitRepository):
         rewind_indexes = {
             ref: index for index, (ref, _) in enumerate(current_refs, 1)
         }
+        heads = {
+            ref_key: self._session_head_from_refs(ref_key, refs)
+            for ref_key in {
+                self._ref_session_key(ref)
+                for ref, _ in refs
+                if self._ref_session_key(ref)
+            }
+        }
         entries = [
             self._entry_from_ref(
                 ref,
                 commit,
                 rewind_index=rewind_indexes.get(ref),
+                is_head=commit == heads.get(self._ref_session_key(ref)),
             )
             for ref, commit in refs
         ]
@@ -344,12 +356,42 @@ class PawGitEngine(ShadowGitRepository):
                 refs.append((parts[0], parts[1]))
         return refs
 
+    def _session_head(self, key: str) -> str | None:
+        refs = [
+            item
+            for item in self._list_pawgit_refs()
+            if self._ref_session_key(item[0]) == key
+        ]
+        return self._session_head_from_refs(key, refs)
+
+    def _session_head_from_refs(
+        self,
+        key: str,
+        refs: list[tuple[str, str]],
+    ) -> str | None:
+        session_refs = [
+            item
+            for item in refs
+            if self._ref_session_key(item[0]) == key
+        ]
+        commits = {commit for _, commit in session_refs}
+        stored = self._get_session_head(key)
+        if stored in commits:
+            return stored
+        if not session_refs:
+            return None
+        return max(
+            session_refs,
+            key=lambda item: self._entry_timestamp(item[0], item[1]),
+        )[1]
+
     def _entry_from_ref(
         self,
         ref: str,
         commit: str,
         *,
         rewind_index: int | None = None,
+        is_head: bool = False,
     ) -> TimelineEntry:
         parts = ref.split("/")
         kind = self._ref_kind(ref)
@@ -358,6 +400,9 @@ class PawGitEngine(ShadowGitRepository):
         commit_message = self._run_git("log", "-1", "--format=%B", commit)
         subject = commit_message.splitlines()[0] if commit_message else ""
         metadata = metadata_from_commit_message(commit_message)
+        parent = metadata.get("parent")
+        if not isinstance(parent, str) or not parent:
+            parent = None
         channel = metadata.get("channel")
         if not isinstance(channel, str) or not channel:
             channel = key.split("-", 1)[0] if key else "unknown"
@@ -372,6 +417,8 @@ class PawGitEngine(ShadowGitRepository):
             query=query_from_commit_message(commit_message),
             channel=channel,
             rewind_index=rewind_index,
+            parent_commit=parent,
+            is_head=is_head,
         )
 
     def _latest_user_query(
@@ -465,6 +512,7 @@ class PawGitEngine(ShadowGitRepository):
                 f"Before rewind to {target}",
             )
             self._restore_paths({rel: blob})
+            self._set_session_head(entry.session_key, entry.commit)
         return RewindResult(
             target=target,
             commit=entry.commit,

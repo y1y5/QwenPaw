@@ -50,6 +50,8 @@ PawGit 注册一个顶级命令：`/pawgit`。
 - 默认只显示当前 session 的检查点。
 - `--limit=N` 限制返回条数，并受配置中的 `max_limit` 约束。
 - `--all` 显示当前 workspace 内所有 session 的检查点。
+- 输出顶部根据 commit metadata 中的 parent 关系绘制轻量 ASCII DAG；
+  `*` 表示当前 HEAD，`o` 表示 active path，`x` 表示 branch。
 - 输出先按 `auto`、`snapshot`、`pre-rewind` 分类，再按 channel 分组。
 - 当前 session 的每一行都会给出可直接执行的 `/pawgit rewind ...` 命令。
 - `--all` 输出中，只有当前 session 的检查点会显示 rewind way。其他
@@ -162,8 +164,9 @@ __pycache__/
 嵌套项目或未初始化子仓库导致 workspace 快照失败。
 
 每个 `auto`、`snapshot` 和 `pre-rewind` 提交都会在 commit message 中保存
-`PawGit-Metadata` JSON，其中包含当时最新的已持久化用户 query。元数据保留完整
-文本，timeline 只显示经过单行化和截断的预览，并正确保留中文。
+`PawGit-Metadata` JSON，其中包含当时最新的已持久化用户 query 和父节点 SHA。
+元数据保留完整文本，timeline 只显示经过单行化和截断的预览，并正确保留中文。
+`.pawgit/heads.json` 只记录各 session 当前 HEAD，不复制完整节点信息。
 
 ## 存储结构
 
@@ -172,6 +175,7 @@ __pycache__/
 |-- shadow.git/    # 独立 bare Git 仓库，即 GIT_DIR
 |-- index          # 独立 Git index，即 GIT_INDEX_FILE
 |-- config.toml    # workspace 级运行配置
+|-- heads.json     # 每个 session 的当前 DAG HEAD
 ```
 
 Ref 分类：

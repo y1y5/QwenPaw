@@ -113,6 +113,11 @@ class MemoryRewindCoordinator:
 
         try:
             await asyncio.to_thread(self._apply_restore_plan, target_blobs)
+            await asyncio.to_thread(
+                self.engine._set_session_head,
+                entry.session_key,
+                entry.commit,
+            )
         except Exception as exc:
             session_rel = next(
                 rel for rel in target_blobs if rel.startswith("sessions/")

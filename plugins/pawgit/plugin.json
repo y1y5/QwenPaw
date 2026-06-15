@@ -1,9 +1,9 @@
 {
   "id": "pawgit",
   "name": "PawGit",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "command",
-  "description": "QwenPaw会话状态版本控制插件，支持会话快照、回滚等操作。",
+  "description": "QwenPaw会话状态版本控制插件，支持会话快照、回滚等操作。增加timeline的DAG展示，方便节点的查看。",
   "author": "PawGit",
   "entry": {
     "backend": "backend.py"

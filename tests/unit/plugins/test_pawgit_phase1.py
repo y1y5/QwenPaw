@@ -35,6 +35,7 @@ from pawgit.handlers import (  # noqa: E402
     PawGitCommandHandler,
     _parse_limit,
 )
+from pawgit.repository import ensure_git_available  # noqa: E402
 
 DEFAULT_SESSION = {
     "channel": "console",
@@ -352,6 +353,8 @@ async def test_timeline_table_format(
     rendered = engine.render_timeline(entries)
 
     assert rendered.startswith("# PawGit Timeline")
+    assert "## Checkpoint Graph" in rendered
+    assert "`*` HEAD, `o` active path, `x` branch" in rendered
     assert "## AUTO Checkpoints" in rendered
     assert "## SNAPSHOT Checkpoints" in rendered
     assert "## PRE-REWIND Checkpoints" in rendered
@@ -408,10 +411,54 @@ async def test_timeline_all_groups_channels_and_hides_foreign_rewind_ways(
     dingtalk_row = next(
         line
         for line in rendered.splitlines()
-        if f"`{dingtalk_entry.commit[:12]}`" in line
+        if line.startswith("|")
+        and f"`{dingtalk_entry.commit[:12]}`" in line
     )
     assert dingtalk_row.startswith("| N/A |")
     assert dingtalk_row.endswith("| N/A |")
+
+
+async def test_timeline_graph_uses_metadata_parent_and_session_head(
+    engine: PawGitEngine,
+    tmp_path: Path,
+):
+    _write_session(tmp_path, queries=("A",))
+    auto_a = await _auto_snapshot(engine)
+    commit_a = engine._run_git("rev-parse", auto_a)
+
+    _write_session(tmp_path, queries=("B",))
+    snap_name = await engine.snapshot(message="B", **DEFAULT_SESSION)
+    snap_ref = f"refs/snap/console-default-console--default/{snap_name}"
+    commit_b = engine._run_git("rev-parse", snap_ref)
+
+    await engine.rewind(target=auto_a, **DEFAULT_SESSION)
+    pre_ref = engine._run_git(
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/pre-rewind",
+    )
+    commit_c = engine._run_git("rev-parse", pre_ref)
+
+    _write_session(tmp_path, queries=("D",))
+    auto_d = await _auto_snapshot(engine)
+    commit_d = engine._run_git("rev-parse", auto_d)
+
+    entries = await engine.timeline(**DEFAULT_SESSION)
+    by_commit = {entry.commit: entry for entry in entries}
+    rendered = engine.render_timeline(entries)
+
+    assert by_commit[commit_a].parent_commit is None
+    assert by_commit[commit_b].parent_commit == commit_a
+    assert by_commit[commit_c].parent_commit == commit_b
+    assert by_commit[commit_d].parent_commit == commit_a
+    assert by_commit[commit_d].is_head is True
+    assert json.loads(
+        (tmp_path / ".pawgit" / "heads.json").read_text(encoding="utf-8"),
+    )["console-default-console--default"] == commit_d
+    assert f"* #1 auto {commit_d[:12]}" in rendered
+    assert f"x #" in rendered
+    assert commit_b[:12] in rendered
+    assert commit_c[:12] in rendered
 
 
 def test_timeline_limit_parser_clamps_and_recovers_from_invalid_values():
@@ -845,3 +892,38 @@ def test_plugin_registers_only_unified_pawgit_command():
     handler = api.register_control_command.call_args.args[0]
     assert isinstance(handler, PawGitCommandHandler)
     assert handler.command_name == "/pawgit"
+
+
+def test_missing_git_has_actionable_install_message(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import pawgit.repository as repository
+
+    monkeypatch.setattr(repository.shutil, "which", lambda _: None)
+
+    with pytest.raises(PawGitError) as exc_info:
+        ensure_git_available()
+
+    message = str(exc_info.value)
+    assert "requires Git" in message
+    assert "https://git-scm.com/downloads" in message
+    assert "restart QwenPaw" in message
+
+
+def test_startup_checks_git_before_installing_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import pawgit.backend as plugin_backend
+
+    plugin_backend._HOOKS_INSTALLED = False
+    missing_git = PawGitError("Git is unavailable")
+    monkeypatch.setattr(
+        plugin_backend,
+        "ensure_git_available",
+        Mock(side_effect=missing_git),
+    )
+
+    with pytest.raises(PawGitError, match="Git is unavailable"):
+        plugin_backend._install_agent_hooks()
+
+    assert plugin_backend._HOOKS_INSTALLED is False

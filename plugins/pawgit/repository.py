@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
@@ -23,6 +24,12 @@ DEFAULT_TIMELINE_LIMIT = 20
 DEFAULT_TIMELINE_MAX_LIMIT = 200
 DEFAULT_QUERY_PREVIEW_CHARS = 120
 DEFAULT_MEMORY_QUIESCE_TIMEOUT = 30.0
+
+GIT_REQUIRED_MESSAGE = (
+    "PawGit requires Git, but the git executable was not found on PATH. "
+    "Install Git from https://git-scm.com/downloads, ensure `git` is "
+    "available in your terminal, and then restart QwenPaw."
+)
 
 DEFAULT_CONFIG = f"""\
 [gc]
@@ -45,15 +52,23 @@ include_memory_quiesce_timeout = {DEFAULT_MEMORY_QUIESCE_TIMEOUT}
 """
 
 
+def ensure_git_available() -> None:
+    """Raise an actionable error when Git is unavailable."""
+    if shutil.which("git") is None:
+        raise PawGitError(GIT_REQUIRED_MESSAGE)
+
+
 class ShadowGitRepository:
     """Own the shadow repository, index, process environment, and file I/O."""
 
     def __init__(self, workspace_dir: str | Path):
+        ensure_git_available()
         self.workspace_dir = Path(workspace_dir).expanduser().resolve()
         self.pawgit_dir = self.workspace_dir / ".pawgit"
         self.git_dir = self.pawgit_dir / "shadow.git"
         self.index_file = self.pawgit_dir / "index"
         self.config_file = self.pawgit_dir / "config.toml"
+        self.heads_file = self.pawgit_dir / "heads.json"
         self.config: dict[str, Any] = {}
         self._config_mtime_ns: int | None = None
         self._lock = asyncio.Lock()
@@ -75,19 +90,20 @@ class ShadowGitRepository:
         return env
 
     def _run_git(self, *args: str, input_text: str | None = None) -> str:
-        if shutil.which("git") is None:
-            raise PawGitError("git executable was not found on PATH")
-        proc = subprocess.run(
-            ["git", *args],
-            cwd=str(self.workspace_dir),
-            env=self._git_env(),
-            input=input_text,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=str(self.workspace_dir),
+                env=self._git_env(),
+                input=input_text,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise PawGitError(GIT_REQUIRED_MESSAGE) from exc
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
             raise PawGitError(f"git {' '.join(args)} failed: {detail}")
@@ -96,14 +112,17 @@ class ShadowGitRepository:
     def _ensure_repo(self) -> None:
         self.pawgit_dir.mkdir(parents=True, exist_ok=True)
         if not self.git_dir.exists():
-            subprocess.run(
-                ["git", "init", "--bare", str(self.git_dir)],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=True,
-            )
+            try:
+                subprocess.run(
+                    ["git", "init", "--bare", str(self.git_dir)],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=True,
+                )
+            except FileNotFoundError as exc:
+                raise PawGitError(GIT_REQUIRED_MESSAGE) from exc
         info_dir = self.git_dir / "info"
         info_dir.mkdir(parents=True, exist_ok=True)
         exclude_path = info_dir / "exclude"
@@ -123,6 +142,56 @@ class ShadowGitRepository:
                 encoding="utf-8",
             )
         self.reload_config(force=True)
+
+    def _load_heads(self) -> dict[str, str]:
+        if not self.heads_file.exists():
+            return {}
+        try:
+            data = json.loads(self.heads_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            key: value
+            for key, value in data.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+
+    def _get_session_head(self, key: str) -> str | None:
+        return self._load_heads().get(key)
+
+    def _set_session_head(self, key: str, commit: str) -> None:
+        heads = self._load_heads()
+        heads[key] = commit
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.pawgit_dir,
+                prefix=".heads.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                json.dump(
+                    heads,
+                    temp_file,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                temp_file.write("\n")
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+                temp_path = Path(temp_file.name)
+            os.replace(temp_path, self.heads_file)
+        except OSError as exc:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            raise PawGitError(
+                f"Failed to update PawGit session heads: {exc}",
+            ) from exc
 
     def _load_config(self) -> dict[str, Any]:
         try:

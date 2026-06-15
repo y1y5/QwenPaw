@@ -59,6 +59,8 @@ class TimelineEntry:
     query: str | None
     channel: str = "unknown"
     rewind_index: int | None = None
+    parent_commit: str | None = None
+    is_head: bool = False
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,7 @@ def encode_metadata(
     channel: str | None = None,
     user_id: str | None = None,
     session_id: str | None = None,
+    parent_commit: str | None = None,
 ) -> str:
     """Encode metadata as a single UTF-8-safe commit-message line."""
     payload = json.dumps(
@@ -174,6 +177,7 @@ def encode_metadata(
             "channel": channel,
             "user_id": user_id,
             "session_id": session_id,
+            "parent": parent_commit,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -208,6 +212,7 @@ def render_timeline(
     if not entries:
         return "No PawGit checkpoints found for this session."
     lines = ["# PawGit Timeline"]
+    lines.extend(_render_timeline_graphs(entries))
     group_titles = {
         "auto": "AUTO Checkpoints",
         "snap": "SNAPSHOT Checkpoints",
@@ -256,7 +261,7 @@ def render_timeline(
             if snapshot_name:
                 commands.append(f"`/pawgit rewind {snapshot_name}`")
             commands.append(f"`/pawgit rewind {entry.commit[:12]}`")
-        snapshot = f"`{snapshot_name}`" if snapshot_name else "N/A"
+        snapshot = f"`{snapshot_name}`" if snapshot_name else f"{entry.timestamp_ms}"
         rewind_way = "<br>".join(commands) if commands else "N/A"
         session_index = (
             str(entry.rewind_index)
@@ -268,6 +273,99 @@ def render_timeline(
             f"{date_text} | {query} | {rewind_way} |",
         )
     return "\n".join(lines)
+
+
+def _render_timeline_graphs(entries: list[TimelineEntry]) -> list[str]:
+    groups: dict[tuple[str, str], list[TimelineEntry]] = {}
+    for entry in entries:
+        groups.setdefault(
+            (entry.channel, entry.session_key),
+            [],
+        ).append(entry)
+
+    lines = [
+        "",
+        "## Checkpoint Graph",
+        "",
+        "`*` HEAD, `o` active path, `x` branch",
+    ]
+    for (channel, key), group in groups.items():
+        lines.extend(
+            [
+                "",
+                f"### Channel: `{channel}` / Session: `{key}`",
+                "",
+                "```text",
+                *_render_session_graph(group),
+                "```",
+            ],
+        )
+    return lines
+
+
+def _render_session_graph(entries: list[TimelineEntry]) -> list[str]:
+    by_commit = {entry.commit: entry for entry in entries}
+    head = next((entry for entry in entries if entry.is_head), None)
+    active: set[str] = set()
+    current = head
+    while current is not None and current.commit not in active:
+        active.add(current.commit)
+        current = by_commit.get(current.parent_commit or "")
+
+    children: dict[str | None, list[TimelineEntry]] = {}
+    for entry in entries:
+        parent = (
+            entry.parent_commit
+            if entry.parent_commit in by_commit
+            else None
+        )
+        children.setdefault(parent, []).append(entry)
+    for siblings in children.values():
+        siblings.sort(
+            key=lambda item: (
+                item.commit not in active,
+                item.timestamp_ms,
+            ),
+        )
+
+    lines = ["ROOT"]
+    visited: set[str] = set()
+
+    def append_children(parent: str | None, prefix: str) -> None:
+        siblings = children.get(parent, [])
+        for index, entry in enumerate(siblings):
+            if entry.commit in visited:
+                continue
+            visited.add(entry.commit)
+            is_last = index == len(siblings) - 1
+            connector = "\\-- " if is_last else "+-- "
+            if entry.is_head:
+                marker = "*"
+            elif entry.commit in active:
+                marker = "o"
+            else:
+                marker = "x"
+            index_text = (
+                str(entry.rewind_index)
+                if entry.rewind_index is not None
+                else "-"
+            )
+            name = (
+                f" {entry.name}"
+                if entry.kind == "snap" and entry.name
+                else ""
+            )
+            lines.append(
+                f"{prefix}{connector}{marker} #{index_text} "
+                f"{entry.kind}{name} {entry.commit[:12]}",
+            )
+            append_children(
+                entry.commit,
+                prefix + ("    " if is_last else "|   "),
+            )
+
+    append_children(None, "")
+    return lines
 
 
 def render_rewind(result: RewindResult) -> str:
