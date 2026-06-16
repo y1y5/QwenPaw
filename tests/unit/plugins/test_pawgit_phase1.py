@@ -411,8 +411,7 @@ async def test_timeline_all_groups_channels_and_hides_foreign_rewind_ways(
     dingtalk_row = next(
         line
         for line in rendered.splitlines()
-        if line.startswith("|")
-        and f"`{dingtalk_entry.commit[:12]}`" in line
+        if line.startswith("|") and f"`{dingtalk_entry.commit[:12]}`" in line
     )
     assert dingtalk_row.startswith("| N/A |")
     assert dingtalk_row.endswith("| N/A |")
@@ -452,9 +451,12 @@ async def test_timeline_graph_uses_metadata_parent_and_session_head(
     assert by_commit[commit_c].parent_commit == commit_b
     assert by_commit[commit_d].parent_commit == commit_a
     assert by_commit[commit_d].is_head is True
-    assert json.loads(
-        (tmp_path / ".pawgit" / "heads.json").read_text(encoding="utf-8"),
-    )["console-default-console--default"] == commit_d
+    assert (
+        json.loads(
+            (tmp_path / ".pawgit" / "heads.json").read_text(encoding="utf-8"),
+        )["console-default-console--default"]
+        == commit_d
+    )
     assert f"* #1 auto {commit_d[:12]}" in rendered
     assert f"x #" in rendered
     assert commit_b[:12] in rendered

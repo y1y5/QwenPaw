@@ -370,9 +370,7 @@ class PawGitEngine(ShadowGitRepository):
         refs: list[tuple[str, str]],
     ) -> str | None:
         session_refs = [
-            item
-            for item in refs
-            if self._ref_session_key(item[0]) == key
+            item for item in refs if self._ref_session_key(item[0]) == key
         ]
         commits = {commit for _, commit in session_refs}
         stored = self._get_session_head(key)

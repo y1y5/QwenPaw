@@ -261,7 +261,9 @@ def render_timeline(
             if snapshot_name:
                 commands.append(f"`/pawgit rewind {snapshot_name}`")
             commands.append(f"`/pawgit rewind {entry.commit[:12]}`")
-        snapshot = f"`{snapshot_name}`" if snapshot_name else f"{entry.timestamp_ms}"
+        snapshot = (
+            f"`{snapshot_name}`" if snapshot_name else f"{entry.timestamp_ms}"
+        )
         rewind_way = "<br>".join(commands) if commands else "N/A"
         session_index = (
             str(entry.rewind_index)
@@ -315,9 +317,7 @@ def _render_session_graph(entries: list[TimelineEntry]) -> list[str]:
     children: dict[str | None, list[TimelineEntry]] = {}
     for entry in entries:
         parent = (
-            entry.parent_commit
-            if entry.parent_commit in by_commit
-            else None
+            entry.parent_commit if entry.parent_commit in by_commit else None
         )
         children.setdefault(parent, []).append(entry)
     for siblings in children.values():
@@ -351,9 +351,7 @@ def _render_session_graph(entries: list[TimelineEntry]) -> list[str]:
                 else "-"
             )
             name = (
-                f" {entry.name}"
-                if entry.kind == "snap" and entry.name
-                else ""
+                f" {entry.name}" if entry.kind == "snap" and entry.name else ""
             )
             lines.append(
                 f"{prefix}{connector}{marker} #{index_text} "
