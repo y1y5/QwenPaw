@@ -24,4 +24,3 @@ class PawOnePlugin:
 
 
 plugin = PawOnePlugin()
-

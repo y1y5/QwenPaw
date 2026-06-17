@@ -110,7 +110,7 @@ class PawOneCommandHandler(BaseControlCommandHandler):
         except PawOneError as exc:
             return f"**PawOne Error**\n\n{exc}"
 
-    async def _dispatch(
+    async def _dispatch(  # pylint: disable=too-many-return-statements
         self,
         context: ControlContext,
         subcommand: str,

@@ -55,7 +55,10 @@ class PawGitCommandHandler(BaseControlCommandHandler):
 
     command_name = "/pawgit"
 
-    async def handle(self, context: ControlContext) -> str:
+    async def handle(  # pylint: disable=too-many-return-statements
+        self,
+        context: ControlContext,
+    ) -> str:
         raw = context.args.get("_raw_args", "")
         subcommand, subargs = _split_subcommand(raw)
         if subcommand in {"", "help", "--help", "-h"}:

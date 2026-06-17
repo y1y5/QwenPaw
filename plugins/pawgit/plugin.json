@@ -1,9 +1,9 @@
 {
   "id": "pawgit",
   "name": "PawGit",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "type": "command",
-  "description": "QwenPaw会话状态版本控制插件，支持会话快照、回滚、DAG时间线和状态重置。",
+  "description": "QwenPaw会话上下文和记忆版本控制插件，支持快照、回滚、DAG时间线、状态重置、Agent工具和配套Skill。",
   "author": "y1yu",
   "entry": {
     "backend": "backend.py"

@@ -4,15 +4,18 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from qwenpaw.plugins.api import PluginApi
 
 from .handlers import PawGitCommandHandler
 from .registry import REGISTRY
 from .repository import ensure_git_available
+from .tools import pawgit
 
 logger = logging.getLogger(__name__)
 
+PLUGIN_DIR = Path(__file__).parent
 
 _HOOKS_INSTALLED = False
 
@@ -111,6 +114,21 @@ class PawGitPlugin:
         api.register_control_command(
             PawGitCommandHandler(),
             priority_level=10,
+        )
+        api.register_tool(
+            tool_name="pawgit",
+            tool_func=pawgit,
+            description=(
+                "Create PawGit snapshots, inspect timelines, preview or "
+                "prepare rewinds, clean checkpoint refs, and reset PawGit."
+            ),
+            icon="P",
+            enabled=True,
+        )
+        api.register_skill_provider(
+            skills_dir=PLUGIN_DIR / "skills",
+            enabled_by_default=True,
+            channels=["all"],
         )
 
         api.register_startup_hook(

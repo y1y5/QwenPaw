@@ -1,24 +1,25 @@
 # PawGit
 
-PawGit 为 QwenPaw workspace 提供独立的影子 Git 检查点、时间线、会话回滚和记忆回滚。
+[[English](README_en.md)]
 
-## 功能概览
+PawGit 是一个 QwenPaw 插件，用于对会话上下文和记忆状态进行版本控制。它将检查点存储在 `.pawgit` 下的私有影子 Git 仓库中，然后让用户查看时间线、预览回滚、回滚当前会话、可选地回滚记忆源文件、清理旧引用，或重置 PawGit 状态。
 
+## 功能特性
 
-| 功能    | 说明                                       |
-| ----- | ---------------------------------------- |
-| 自动检查点 | Agent 回复后，按防抖时间创建 workspace 快照           |
-| 永久快照  | 用户手动创建并命名；不会被 PawGit GC 删除               |
-| 时间线   | 按 `auto`、`snapshot`、`pre-rewind` 分类展示检查点 |
-| 会话回滚  | 只恢复当前 channel 和 session 的会话 JSON         |
-| 记忆回滚  | 同时恢复当前会话、`MEMORY.md` 和 `memory/`         |
-| 垃圾回收  | 自动（主动）清理满足策略的自动检查点和回滚前备份                 |
-| 重置    | 删除并重建当前 workspace 的 `.pawgit` 状态          |
+| 功能 | 说明 |
+| --- | --- |
+| 自动检查点 | 在 Agent 回复后，PawGit 会为当前会话创建一个去抖动的检查点。 |
+| 命名快照 | 用户可以创建永久检查点，PawGit GC 不会将其删除。 |
+| 时间线 | 按类型和频道分组展示检查点，并附带 ASCII DAG 预览。 |
+| 会话回滚 | 仅还原当前频道/会话的会话状态。 |
+| 记忆回滚 | 还原当前会话以及 `MEMORY.md` 和 `memory/`。 |
+| Agent 工具 | 让 Agent 创建快照、查看时间线、预览回滚，并执行安全的维护操作。 |
+| 垃圾回收 | 根据保留策略清理可回收的 `auto` 和 `pre-rewind` 引用。 |
+| 重置 | 删除并重建 `.pawgit`，不影响会话或记忆文件。 |
 
+## 斜杠命令
 
-## 命令
-
-PawGit 注册一个顶级命令：`/pawgit`。
+PawGit 提供一个统一的斜杠命令：
 
 ```text
 /pawgit timeline [--limit=N] [--all]
@@ -30,9 +31,9 @@ PawGit 注册一个顶级命令：`/pawgit`。
 /pawgit --help
 ```
 
-不带参数执行 `/pawgit` 也会显示帮助信息。
+不带参数运行 `/pawgit` 也会显示帮助信息。
 
-常用流程：
+常见流程：
 
 ```text
 /pawgit timeline
@@ -41,7 +42,40 @@ PawGit 注册一个顶级命令：`/pawgit`。
 /pawgit rewind before-refactor
 ```
 
-### Timeline
+## Agent 工具
+
+插件注册了一个名为 `pawgit` 的内置 Agent 工具。
+
+该 Agent 工具适用于：
+
+- 在执行有风险的操作前创建快照
+- 渲染时间线
+- 预览回滚目标
+- 执行 GC 试运行或确认后的 GC
+- 在显式确认后重置 PawGit
+
+示例：
+
+```text
+pawgit(action="snapshot", message="before-risky-change")
+pawgit(action="timeline", limit=10)
+pawgit(action="rewind", target="1", dry_run=true)
+pawgit(action="rewind", target="1", include_memory=true, dry_run=true)
+pawgit(action="gc", dry_run=true)
+pawgit(action="gc", dry_run=false, confirm=true)
+pawgit(action="reset", confirm=true)
+```
+
+真正的回滚在 Agent 工具中不可自主执行。真正的回滚会改变当前会话上下文，可能需要 QwenPaw 重新加载会话状态，因此用户必须自己通过**斜杠命令**路径执行：
+
+```text
+/pawgit rewind <target>
+/pawgit rewind <target> --include-memory --confirm
+```
+
+Agent 工具可以预览这些操作，然后在需要真正回滚时请用户运行斜杠命令。
+
+## 时间线
 
 ```text
 /pawgit timeline
@@ -49,17 +83,25 @@ PawGit 注册一个顶级命令：`/pawgit`。
 /pawgit timeline --all
 ```
 
-- 默认只显示当前 session 的检查点。
-- `--limit=N` 限制返回条数，并受配置中的 `max_limit` 约束。
-- `--all` 显示当前 workspace 内所有 session 的检查点。
-- 输出顶部根据 commit metadata 中的 parent 关系绘制轻量 ASCII DAG；
-  `*` 表示当前 HEAD，`o` 表示 active path，`x` 表示 branch。
-- 输出先按 `auto`、`snapshot`、`pre-rewind` 分类，再按 channel 分组。
-- 当前 session 的每一行都会给出可直接执行的 `/pawgit rewind ...` 命令。
-- `--all` 输出中，只有当前 session 的检查点会显示 rewind way。其他
-channel 或 session 的检查点只用于查看，不能从当前 session 直接 rewind。
+- 默认仅显示当前会话的检查点。
+- `--limit=N` 限制每个分区的行数，上限为 `timeline.max_limit`。
+- `--all` 显示当前工作区中所有会话的检查点。
+- 时间线输出包含一个从提交元数据派生的轻量级 ASCII DAG。
+- `*` 标记当前会话的 HEAD，`o` 标记活跃路径，`x` 标记因回滚而留下的分支。
+- 条目按检查点类型（`auto`、`snapshot`、`pre-rewind`）分组，再频道分组。
+- 回滚命令仅对当前会话的检查点显示。其他会话的检查点仅作为上下文展示，不应使用当前会话的时间线索引进行回滚。
 
-### Snapshot
+每个时间线行包含：
+
+- 检查点类型
+- 快照名称
+- 提交 SHA 前缀
+- 真实时间戳
+- 频道
+- 最新用户查询预览
+- 适用时的回滚命令
+
+## 快照
 
 ```text
 /pawgit snapshot
@@ -67,20 +109,23 @@ channel 或 session 的检查点只用于查看，不能从当前 session 直接
 /pawgit snapshot Release candidate 1
 ```
 
-- 创建永久快照，存储在 `refs/snap/`。
-- message 同时用于快照名称和提交说明。
-- 未提供 message 时，PawGit 自动生成名称。
-- 名称会被转换为安全的 Git ref；重名时自动追加数字后缀。
-- 永久快照不会被 `/pawgit gc` 删除。
+- 在 `refs/snap/` 下创建永久快照。
+- 消息同时用作快照标签和提交正文。
+- 如果未提供消息，PawGit 会生成基于时间戳的标签。
+- 标签会被清理为安全的 Git ref 组件。
+- 重复的标签会附加数字后缀。
+- 命名快照永远不会被 PawGit GC 删除。
 
-### Rewind
+每个检查点都存储提交元数据，包含最新已持久化的用户查询、频道、用户 ID、会话 ID 和父提交。时间线渲染会显示安全的单行查询预览，并正确保留中文文本。
+
+## 回滚
 
 目标可以是：
 
-- `/pawgit timeline` 中的序号，例如 `1`
-- snapshot 名称，例如 `before-refactor`
-- commit SHA 或其唯一前缀
-- 完整 PawGit ref
+- 时间线索引，例如 `1`
+- 快照名称，例如 `before-refactor`
+- 提交 SHA 或唯一前缀
+- 完整的 PawGit ref
 
 ```text
 /pawgit rewind 1
@@ -89,38 +134,35 @@ channel 或 session 的检查点只用于查看，不能从当前 session 直接
 /pawgit rewind 1 --dry-run
 ```
 
-普通 rewind 只恢复当前  session 对应的会话 JSON，不修改
-`MEMORY.md`、`memory/` 或其他 session。
+普通回滚仅还原当前会话的 JSON。它不会修改 `MEMORY.md`、`memory/`、其他会话或任意工作区文件。
 
-执行真实回滚前，PawGit 会创建一个 `pre-rewind` 安全检查点。`--dry-run`
-只解析目标并展示将恢复的文件，不写入 workspace，也不创建安全检查点。
+在真正回滚之前，PawGit 会创建一个 `pre-rewind` 检查点作为安全备份。`--dry-run` 仅解析目标并展示将要还原的内容；它不会写入文件或创建安全检查点。
 
-如果纯数字同时也是一个 snapshot 名称，PawGit 优先按时间线序号解析；
-可以使用完整 ref 或 SHA 回滚到该 snapshot。
+如果一个纯数字字符串同时是快照名称和可能的时间线索引，PawGit 会优先将其视为时间线索引。请使用完整的 ref 或 SHA 来直接定位该数字快照。
 
-### Memory Rewind
+## 记忆回滚
 
 ```text
 /pawgit rewind before-refactor --include-memory --dry-run
 /pawgit rewind before-refactor --include-memory --confirm
 ```
 
-Memory rewind 恢复：
+记忆回滚会还原：
 
-1. 当前 session 的会话 JSON
-2. workspace 根目录下的 `MEMORY.md`
-3. `memory/` 目录及其在目标检查点中的文件
+1. 当前会话 JSON
+2. 工作区根目录下的 `MEMORY.md`
+3. 目标检查点中 `memory/` 下存在过的文件
 
-这是 workspace 级操作。`MEMORY.md` 和 `memory/` 由所有 channel 和 session
-共享，因此目标检查点之后由其他会话写入的记忆也会被丢弃。
+这比普通的会话回滚范围更广。`MEMORY.md` 和 `memory/` 在当前 workspace 所有频道和会话之间共享，因此其他会话在目标检查点之后对记忆的修改可能会被丢弃。
 
-保护措施：
+安全行为：
 
-- 非 dry-run 操作必须显式提供 `--confirm`。
-- 回滚前创建 `pre-rewind` 安全检查点。
-- 文件恢复失败时，PawGit 尝试从安全检查点恢复原状态。
+- 非试运行的记忆回滚需要 `--confirm`
+- PawGit 会先创建一个 `pre-rewind` 安全检查点
+- 如果还原失败，PawGit 会尝试从安全检查点恢复
+- 正在进行的查询会在记忆回滚维护门后等待
 
-### Garbage Collection
+## 垃圾回收
 
 ```text
 /pawgit gc
@@ -129,38 +171,44 @@ Memory rewind 恢复：
 /pawgit gc --compact
 ```
 
-- 默认只处理当前 session 的 `auto` 和 `pre-rewind` refs。
-- `--all-sessions` 将清理范围扩大到整个 workspace。
-- `--dry-run` 只显示将删除和保留的 refs。
-- `--compact` 删除作用域内全部可回收的 `auto` 和 `pre-rewind` refs。
-- `snapshot` refs 永远不会被 PawGit GC 删除。
-- 非 dry-run GC 最后会运行 `git gc --prune=now`。
+- 默认情况下，GC 仅处理当前会话的 `auto` 和 `pre-rewind` 引用。
+- `--all-sessions` 将清理范围扩展到工作区中的所有会话。
+- `--dry-run` 报告将被删除或保留的引用。
+- `--compact` 删除范围内所有可回收的 `auto` 和 `pre-rewind` 引用。
+- `snapshot` 引用永远不会被 PawGit GC 删除。
+- 非试运行的 GC 在删除引用后会执行 `git gc --prune=now`。
 
-每次自动检查点完成后，PawGit 也会按默认策略自动运行一次 GC。
+自动检查点也会按照默认保留策略触发 GC。
 
-普通 GC 对自动检查点采用“数量或时间”保留策略：只要检查点属于最新
-`gc_keep_count` 个，或者仍在 `gc_keep_days` 天以内，就会保留。
-`pre-rewind` refs 单独按 `pre_rewind_retention_days` 清理。
+保留策略同时使用数量和时间窗口：
 
-### Reset
+- 每个会话保留最新的 `gc.gc_keep_count` 个 auto 检查点
+- 保留比 `gc.gc_keep_days` 更新的 auto 检查点
+- 保留比 `gc.pre_rewind_retention_days` 更新的 `pre-rewind` 引用
+
+## 重置
 
 ```text
 /pawgit reset
 /pawgit reset --confirm
 ```
 
-`reset` 删除并重建当前 workspace 的 `.pawgit`，包括影子 Git 仓库、
-refs、DAG HEAD、配置文件和时间线元数据。它不会修改用户文件、sessions、
-`MEMORY.md` 或 `memory/`。
+`reset` 会删除并重建当前工作区的 `.pawgit` 目录，包括影子 Git 仓库、引用、DAG HEAD 元数据和 PawGit 配置。
 
-非确认调用只展示风险说明；真实执行必须提供 `--confirm`。
+它不会修改：
+
+- 用户项目文件
+- 会话 JSON 文件
+- `MEMORY.md`
+- `memory/`
+
+不带 `--confirm` 运行 `/pawgit reset` 仅显示风险提示信息。
 
 ## 快照内容
 
-每个检查点都是一个**无父**提交的完整 workspace 快照。PawGit 每次都会从空索引
-重建快照，并使用 `git add -f` 绕过 workspace 内所有 `.gitignore`。
+每个检查点都是 PawGit 影子 Git 仓库中的一个根提交。PawGit 会为每个快照从零重建 Git 索引，并使用 `git add -f`，因此工作区的 `.gitignore` 文件无法改变快照边界。
 
-以下内容默认排除：
+默认排除项包括：
 
 ```text
 .git/
@@ -175,40 +223,37 @@ __pycache__/
 *.log
 ```
 
-实际列表以 `support.EXCLUDE_PATTERNS` 为准。排除 `coding_projects/` 可以避免
-嵌套项目或未初始化子仓库导致 workspace 快照失败。
+实际列表由 `support.EXCLUDE_PATTERNS` 定义。排除 `coding_projects/` 可以避免因嵌套仓库或未检出提交的项目而导致的失败。
 
-每个 `auto`、`snapshot` 和 `pre-rewind` 提交都会在 commit message 中保存
-`PawGit-Metadata` JSON，其中包含当时最新的已持久化用户 query 和父节点 SHA。
-元数据保留完整文本，timeline 只显示经过单行化和截断的预览，并正确保留中文。
-`.pawgit/heads.json` 只记录各 session 当前 HEAD，不复制完整节点信息。
-
-## 存储结构
+## 存储布局
 
 ```text
 <workspace>/.pawgit/
-|-- shadow.git/    # 独立 bare Git 仓库，即 GIT_DIR
-|-- index          # 独立 Git index，即 GIT_INDEX_FILE
-|-- config.toml    # workspace 级运行配置
-|-- heads.json     # 每个 session 的当前 DAG HEAD
+|-- shadow.git/    # 私有裸 Git 仓库
+|-- index          # 私有 Git 索引
+|-- config.toml    # 工作区级别的 PawGit 配置
+|-- heads.json     # 每个会话的当前 DAG HEAD
 ```
 
-Ref 分类：
+引用类别：
 
+| Ref 前缀 | 含义 | GC 行为 |
+| --- | --- | --- |
+| `refs/auto/` | Agent 回复后的自动检查点 | 按数量/时间/compact 清理 |
+| `refs/snap/` | 用户创建的永久快照 | 始终保留 |
+| `refs/pre-rewind/` | 真正回滚前的安全检查点 | 按保留天数/compact 清理 |
 
-| Ref 前缀             | 内容              | GC 行为              |
-| ------------------ | --------------- | ------------------ |
-| `refs/auto/`       | Agent 回复后的自动检查点 | 按数量、时间或 compact 清理 |
-| `refs/snap/`       | 用户创建的永久快照       | 始终保留               |
-| `refs/pre-rewind/` | 每次真实回滚前的安全检查点   | 按保留天数或 compact 清理  |
-
-
-Git 对象可能在 refs 被删除后暂时保留，直到非 dry-run GC 执行对象清理。
+在引用被删除后，Git 对象可能仍然保留，直到非试运行的 GC 对其进行清理。
 
 ## 配置
 
-配置文件位于 `<workspace>/.pawgit/config.toml`。PawGit 会检测文件修改时间，
-后续命令自动使用新配置，无需重新安装插件。
+配置文件：
+
+```text
+<workspace>/.pawgit/config.toml
+```
+
+PawGit 会在文件变更时重新加载配置，因此用户无需重新安装插件即可编辑配置。
 
 默认配置：
 
@@ -232,39 +277,30 @@ query_preview_chars = 120
 include_memory_quiesce_timeout = 30.0
 ```
 
+| 配置键 | 说明 |
+| --- | --- |
+| `gc.gc_keep_count` | 每个会话保留的最少最新 auto 检查点数量。 |
+| `gc.gc_keep_days` | 保留 auto 检查点的时间窗口。 |
+| `gc.pre_rewind_retention_days` | pre-rewind 安全引用的保留窗口。 |
+| `auto.debounce_seconds` | 创建自动检查点前的去抖动延迟。 |
+| `timeline.default_limit` | 默认时间线行数限制。 |
+| `timeline.max_limit` | 可接受的最大时间线行数限制。 |
+| `display.query_preview_chars` | 时间线中查询预览的最大长度。 |
+| `safety.include_memory_quiesce_timeout` | 等待记忆回滚静止的最大秒数。 |
 
-| 配置项                                     | 说明                          |
-| --------------------------------------- | --------------------------- |
-| `gc.gc_keep_count`                      | 每个 session 至少保留的最新自动检查点数量   |
-| `gc.gc_keep_days`                       | 自动检查点的时间保留窗口                |
-| `gc.pre_rewind_retention_days`          | 回滚前安全检查点的保留天数               |
-| `auto.debounce_seconds`                 | Agent 回复后创建自动检查点的防抖时间       |
-| `timeline.default_limit`                | timeline 默认返回条数             |
-| `timeline.max_limit`                    | timeline 允许的最大返回条数          |
-| `display.query_preview_chars`           | timeline 中 query 预览的最大字符数   |
-| `safety.include_memory_quiesce_timeout` | Memory rewind 等待其他任务退出的最长秒数 |
+命令行参数仅影响当前调用。例如，`/pawgit timeline --limit=5` 不会修改 `config.toml`。
 
+## 模块映射
 
-1. `gc.gc_keep_count`和`gc.gc_keep_days`可以配合使用，`/pawgit gc`命令会保留
-**最新的`gc.gc_keep_count`个检查点 以及 `gc.gc_keep_days`窗口内的检查点**。
-
-2. 命令行参数只影响当前调用。例如，`/pawgit timeline --limit=N` 会覆盖
-`timeline.default_limit`，但不会修改 `config.toml`。
-
-## 模块结构
-
-
-| 文件                 | 职责                                  |
-| ------------------ | ----------------------------------- |
-| `backend.py`       | 插件入口，注册 `/pawgit` 和 Agent hooks     |
-| `handlers.py`      | `/pawgit` 帮助与子命令分发                  |
-| `registry.py`      | 每 workspace Engine 注册表和自动快照防抖       |
-| `engine.py`        | snapshot、timeline、普通 rewind 和 GC 编排 |
-| `memory_rewind.py` | Memory rewind 的任务静默、文件恢复和回滚         |
-| `repository.py`    | Shadow Git、配置加载和原子文件写入              |
-| `support.py`       | 数据模型、排除策略、元数据、ref 解析和渲染             |
-| `utils.py`         | session 路径、ref 清洗和命令参数辅助函数          |
-
-
-Agent 回复完成后，`post_reply` hook 调度自动检查点；真实 Memory rewind
-期间，`pre_reply` hook 通过 `query_gate` 等待维护事务结束。
+| 文件 | 职责 |
+| --- | --- |
+| `backend.py` | 插件入口点；注册斜杠命令、Agent 工具、Skill 提供者和钩子。 |
+| `handlers.py` | `/pawgit` 帮助文本和子命令分发。 |
+| `tools.py` | Agent 可调用的 PawGit 工具，用于快照、时间线、回滚预览、GC 和重置。 |
+| `registry.py` | 按工作区的引擎注册表和自动快照去抖动。 |
+| `engine.py` | 快照、时间线、会话回滚、GC 和重置的编排。 |
+| `memory_rewind.py` | 记忆回滚维护门和文件还原。 |
+| `repository.py` | 影子 Git 设置、配置加载、Git 可用性检查和原子写入。 |
+| `support.py` | 数据模型、排除项、元数据辅助、目标解析和渲染器。 |
+| `utils.py` | 会话路径、ref 清理、会话键和命令解析辅助。 |
+| `skills/pawgit/SKILL.md` | 教导 Agent 何时以及如何使用 PawGit 工具的 Skill 指令。 |

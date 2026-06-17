@@ -36,6 +36,7 @@ from pawgit.handlers import (  # noqa: E402
     _parse_limit,
 )
 from pawgit.repository import ensure_git_available  # noqa: E402
+from pawgit.tools import pawgit  # noqa: E402
 
 DEFAULT_SESSION = {
     "channel": "console",
@@ -132,6 +133,13 @@ def _control_context(raw: str = "") -> SimpleNamespace:
         user_id="default",
         args={"_raw_args": raw},
     )
+
+
+def _tool_text(response) -> str:
+    block = response.content[0]
+    if hasattr(block, "text"):
+        return block.text
+    return block["text"]
 
 
 @pytest.fixture
@@ -458,7 +466,7 @@ async def test_timeline_graph_uses_metadata_parent_and_session_head(
         == commit_d
     )
     assert f"* #1 auto {commit_d[:12]}" in rendered
-    assert f"x #" in rendered
+    assert "x #" in rendered
     assert commit_b[:12] in rendered
     assert commit_c[:12] in rendered
 
@@ -920,6 +928,67 @@ async def test_pawgit_reset_requires_confirmation(
     fake.reset.assert_not_awaited()
 
 
+async def test_pawgit_agent_tool_snapshot_and_timeline(
+    tmp_path: Path,
+):
+    from qwenpaw.app.agent_context import (
+        set_current_channel,
+        set_current_session_id,
+        set_current_user_id,
+    )
+    from qwenpaw.config.context import set_current_workspace_dir
+
+    set_current_workspace_dir(tmp_path)
+    set_current_session_id(DEFAULT_SESSION["session_id"])
+    set_current_user_id(DEFAULT_SESSION["user_id"])
+    set_current_channel(DEFAULT_SESSION["channel"])
+    _write_session(tmp_path, queries=("你好 PawGit",))
+
+    snapshot = await pawgit(
+        action="snapshot",
+        message="before-tool-change",
+    )
+    timeline = await pawgit(action="timeline", limit=5)
+
+    assert "Permanent PawGit snapshot created" in _tool_text(snapshot)
+    rendered = _tool_text(timeline)
+    assert "PawGit Timeline" in rendered
+    assert "before-tool-change" in rendered
+    assert "你好 PawGit" in rendered
+
+
+async def test_pawgit_agent_tool_requires_confirm_for_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import pawgit.tools as tool_module
+
+    fake = SimpleNamespace(
+        rewind=AsyncMock(),
+        gc=AsyncMock(),
+        reset=AsyncMock(),
+    )
+    monkeypatch.setattr(
+        tool_module,
+        "_context",
+        lambda: (fake, "console:default", "default", "console"),
+    )
+
+    rewind = await pawgit(
+        action="rewind",
+        target="1",
+        dry_run=False,
+    )
+    gc = await pawgit(action="gc", dry_run=False)
+    reset = await pawgit(action="reset")
+
+    assert _tool_text(rewind).startswith("CONTROL_COMMAND_REQUIRED")
+    assert _tool_text(gc).startswith("CONFIRMATION_REQUIRED")
+    assert _tool_text(reset).startswith("CONFIRMATION_REQUIRED")
+    fake.rewind.assert_not_awaited()
+    fake.gc.assert_not_awaited()
+    fake.reset.assert_not_awaited()
+
+
 async def test_pawgit_help_and_unknown_subcommand():
     handler = PawGitCommandHandler()
 
@@ -936,6 +1005,8 @@ def test_plugin_registers_only_unified_pawgit_command():
 
     api = SimpleNamespace(
         register_control_command=Mock(),
+        register_tool=Mock(),
+        register_skill_provider=Mock(),
         register_startup_hook=Mock(),
         register_shutdown_hook=Mock(),
     )
@@ -946,6 +1017,19 @@ def test_plugin_registers_only_unified_pawgit_command():
     handler = api.register_control_command.call_args.args[0]
     assert isinstance(handler, PawGitCommandHandler)
     assert handler.command_name == "/pawgit"
+    api.register_tool.assert_called_once()
+    assert api.register_tool.call_args.kwargs["tool_name"] == "pawgit"
+    assert api.register_tool.call_args.kwargs["enabled"] is True
+    api.register_skill_provider.assert_called_once()
+    assert (
+        api.register_skill_provider.call_args.kwargs["skills_dir"].name
+        == "skills"
+    )
+    assert (
+        api.register_skill_provider.call_args.kwargs["enabled_by_default"]
+        is True
+    )
+    assert api.register_skill_provider.call_args.kwargs["channels"] == ["all"]
 
 
 def test_missing_git_has_actionable_install_message(

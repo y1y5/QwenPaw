@@ -130,8 +130,7 @@ class PawOneService:
             return True
         except Exception:
             logger.exception(
-                "PawOne target echo failed: agent=%s channel=%s "
-                "session=%s",
+                "PawOne target echo failed: agent=%s channel=%s session=%s",
                 target.agent_id,
                 target.channel,
                 target.session_id,

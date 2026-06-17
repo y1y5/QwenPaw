@@ -57,4 +57,3 @@ class PawOneRegistry:
 
 
 REGISTRY = PawOneRegistry()
-
