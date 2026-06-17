@@ -10,7 +10,7 @@ from qwenpaw.plugins.api import PluginApi
 
 from .handlers import PawGitCommandHandler
 from .registry import REGISTRY
-from .repository import ensure_git_available
+from .core.repository import ensure_git_available
 from .tools import pawgit
 
 logger = logging.getLogger(__name__)

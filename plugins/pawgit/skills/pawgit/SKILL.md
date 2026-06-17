@@ -19,6 +19,12 @@ not a general workspace file rollback. Rewind restores the current conversation
 session context, and only restores memory source files when memory rewind is
 explicitly requested. It does not restore arbitrary project files.
 
+For faster GC, each checkpoint is stored as a parentless Git commit (no
+`-p` parent): every snapshot is an independent full-workspace tree, so deleting
+old refs does not require walking a long Git parent chain. The session timeline
+DAG is maintained separately via `PawGit-Metadata` parent fields and
+`.pawgit/heads.json`, not via Git commit parent links.
+
 Do not edit `.pawgit` files directly. Prefer dry-run and confirmation flows for
 destructive operations.
 

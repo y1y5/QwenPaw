@@ -24,7 +24,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[3] / "plugins"
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
-from pawgit.engine import (  # noqa: E402
+from pawgit.core.engine import (  # noqa: E402
     GcResult,
     PawGitEngine,
     PawGitError,
@@ -35,7 +35,7 @@ from pawgit.handlers import (  # noqa: E402
     PawGitCommandHandler,
     _parse_limit,
 )
-from pawgit.repository import ensure_git_available  # noqa: E402
+from pawgit.core.repository import ensure_git_available  # noqa: E402
 from pawgit.tools import pawgit  # noqa: E402
 
 DEFAULT_SESSION = {
@@ -1035,7 +1035,7 @@ def test_plugin_registers_only_unified_pawgit_command():
 def test_missing_git_has_actionable_install_message(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    import pawgit.repository as repository
+    import pawgit.core.repository as repository
 
     monkeypatch.setattr(repository.shutil, "which", lambda _: None)
 

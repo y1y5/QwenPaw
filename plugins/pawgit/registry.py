@@ -9,9 +9,9 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from .engine import PawGitEngine
-from .repository import DEFAULT_AUTO_DEBOUNCE_SECONDS
-from .utils import session_key
+from .core.engine import PawGitEngine
+from .core.repository import DEFAULT_AUTO_DEBOUNCE_SECONDS
+from .core.utils import session_key
 
 logger = logging.getLogger(__name__)
 

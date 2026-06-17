@@ -191,7 +191,7 @@ def metadata_from_commit_message(message: str) -> dict:
         if not line.startswith(METADATA_PREFIX):
             continue
         try:
-            metadata = json.loads(line[len(METADATA_PREFIX) :])
+            metadata = json.loads(line[len(METADATA_PREFIX):])
         except json.JSONDecodeError:
             return {}
         return metadata if isinstance(metadata, dict) else {}

@@ -24,10 +24,10 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from pawgit import backend, handlers  # noqa: E402
-from pawgit.engine import PawGitEngine, PawGitError  # noqa: E402
+from pawgit.core.engine import PawGitEngine, PawGitError  # noqa: E402
 from pawgit.handlers import PawGitCommandHandler  # noqa: E402
-from pawgit.memory_rewind import MemoryRewindCoordinator  # noqa: E402
-from pawgit.support import RewindResult  # noqa: E402
+from pawgit.core.memory_rewind import MemoryRewindCoordinator  # noqa: E402
+from pawgit.core.support import RewindResult  # noqa: E402
 
 SESSION = {
     "channel": "console",

@@ -9,7 +9,7 @@ from qwenpaw.app.runner.control_commands.base import (
 )
 
 from .registry import REGISTRY
-from .utils import first_positional, parse_flags
+from .core.utils import first_positional, parse_flags
 
 PAWGIT_HELP = (
     "# PawGit\n\n"
