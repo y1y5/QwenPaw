@@ -26,6 +26,7 @@ PAWGIT_HELP = (
     "| Restore this conversation and memory source files. |\n"
     "| `/pawgit gc [--compact] [--all-sessions] [--dry-run]` "
     "| Clean collectible checkpoints. |\n"
+    "| `/pawgit reset --confirm` | Delete and recreate `.pawgit`. |\n"
     "| `/pawgit --help` | Show this help. |\n\n"
     "Memory rewind requires `--confirm` unless `--dry-run` is used.\n"
 )
@@ -67,6 +68,8 @@ class PawGitCommandHandler(BaseControlCommandHandler):
             return await self._rewind(context, subargs)
         if subcommand == "gc":
             return await self._gc(context, subargs)
+        if subcommand == "reset":
+            return await self._reset(context, subargs)
         return (
             f"**Unknown PawGit subcommand:** `{subcommand}`\n\n"
             f"{PAWGIT_HELP}"
@@ -137,3 +140,22 @@ class PawGitCommandHandler(BaseControlCommandHandler):
             dry_run="--dry-run" in flags,
         )
         return engine.render_gc(result)
+
+    @staticmethod
+    async def _reset(context: ControlContext, raw: str) -> str:
+        flags = parse_flags(raw)
+        if "--confirm" not in flags:
+            return (
+                "**Confirmation Required**\n\n"
+                "This operation deletes `.pawgit`, including all PawGit "
+                "checkpoints, refs, timeline metadata, and config for the "
+                "current workspace. User files, sessions, and memory files "
+                "are not modified.\n\n"
+                "Run `/pawgit reset --confirm` to continue."
+            )
+        engine = REGISTRY.get_for_workspace(context.workspace)
+        await engine.reset()
+        return (
+            "**PawGit reset complete**\n\n"
+            "Deleted and recreated `.pawgit` for this workspace."
+        )

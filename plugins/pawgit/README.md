@@ -13,6 +13,7 @@ PawGit 为 QwenPaw workspace 提供独立的影子 Git 检查点、时间线、�
 | 会话回滚  | 只恢复当前 channel 和 session 的会话 JSON         |
 | 记忆回滚  | 同时恢复当前会话、`MEMORY.md` 和 `memory/`         |
 | 垃圾回收  | 自动（主动）清理满足策略的自动检查点和回滚前备份                 |
+| 重置    | 删除并重建当前 workspace 的 `.pawgit` 状态          |
 
 
 ## 命令
@@ -25,6 +26,7 @@ PawGit 注册一个顶级命令：`/pawgit`。
 /pawgit rewind <N|snap_name|sha> [--dry-run]
 /pawgit rewind <target> --include-memory [--dry-run|--confirm]
 /pawgit gc [--compact] [--all-sessions] [--dry-run]
+/pawgit reset --confirm
 /pawgit --help
 ```
 
@@ -93,8 +95,8 @@ channel 或 session 的检查点只用于查看，不能从当前 session 直接
 执行真实回滚前，PawGit 会创建一个 `pre-rewind` 安全检查点。`--dry-run`
 只解析目标并展示将恢复的文件，不写入 workspace，也不创建安全检查点。
 
-如果纯数字同时也是一个 snapshot 名称，PawGit 优先按 snapshot 名称解析，
-而不是按时间线序号解析。
+如果纯数字同时也是一个 snapshot 名称，PawGit 优先按时间线序号解析；
+可以使用完整 ref 或 SHA 回滚到该 snapshot。
 
 ### Memory Rewind
 
@@ -139,6 +141,19 @@ Memory rewind 恢复：
 普通 GC 对自动检查点采用“数量或时间”保留策略：只要检查点属于最新
 `gc_keep_count` 个，或者仍在 `gc_keep_days` 天以内，就会保留。
 `pre-rewind` refs 单独按 `pre_rewind_retention_days` 清理。
+
+### Reset
+
+```text
+/pawgit reset
+/pawgit reset --confirm
+```
+
+`reset` 删除并重建当前 workspace 的 `.pawgit`，包括影子 Git 仓库、
+refs、DAG HEAD、配置文件和时间线元数据。它不会修改用户文件、sessions、
+`MEMORY.md` 或 `memory/`。
+
+非确认调用只展示风险说明；真实执行必须提供 `--confirm`。
 
 ## 快照内容
 

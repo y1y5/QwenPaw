@@ -778,6 +778,34 @@ async def test_gc_all_sessions_and_pre_rewind_retention(
 
 
 # ---------------------------------------------------------------------------
+# /pawgit reset
+# ---------------------------------------------------------------------------
+
+
+async def test_reset_recreates_empty_pawgit_state(
+    engine: PawGitEngine,
+    tmp_path: Path,
+):
+    _write_session(tmp_path)
+    await _auto_snapshot(engine)
+    engine.config_file.write_text(
+        "[timeline]\ndefault_limit = 2\n",
+        encoding="utf-8",
+    )
+    assert engine.heads_file.exists()
+
+    await engine.reset()
+
+    assert engine.pawgit_dir.exists()
+    assert engine.git_dir.exists()
+    assert engine.config_file.exists()
+    assert not engine.heads_file.exists()
+    assert engine._list_pawgit_refs() == []
+    assert await engine.timeline(**DEFAULT_SESSION) == []
+    assert engine.timeline_default_limit != 2
+
+
+# ---------------------------------------------------------------------------
 # Slash-command argument forwarding
 # ---------------------------------------------------------------------------
 
@@ -808,6 +836,7 @@ async def test_pawgit_subcommands_forward_all_arguments(
                 dry_run=True,
             ),
         ),
+        reset=AsyncMock(),
         render_timeline=lambda entries: "timeline",
         render_rewind=lambda result: "rewind",
         render_gc=lambda result: "gc",
@@ -830,6 +859,9 @@ async def test_pawgit_subcommands_forward_all_arguments(
     )
     gc_output = await handler.handle(
         _control_context("gc --compact --all-sessions --dry-run"),
+    )
+    reset_output = await handler.handle(
+        _control_context("reset --confirm"),
     )
 
     assert (
@@ -866,6 +898,26 @@ async def test_pawgit_subcommands_forward_all_arguments(
         all_sessions=True,
         dry_run=True,
     )
+    assert reset_output.startswith("**PawGit reset complete**")
+    fake.reset.assert_awaited_once_with()
+
+
+async def test_pawgit_reset_requires_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import pawgit.handlers as handlers
+
+    fake = SimpleNamespace(reset=AsyncMock())
+    monkeypatch.setattr(
+        handlers.REGISTRY,
+        "get_for_workspace",
+        lambda workspace: fake,
+    )
+
+    output = await PawGitCommandHandler().handle(_control_context("reset"))
+
+    assert output.startswith("**Confirmation Required**")
+    fake.reset.assert_not_awaited()
 
 
 async def test_pawgit_help_and_unknown_subcommand():

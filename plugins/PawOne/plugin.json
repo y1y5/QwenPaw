@@ -1,0 +1,19 @@
+{
+  "id": "pawone",
+  "name": "PawOne",
+  "version": "0.1.0",
+  "type": "command",
+  "description": "A slash-command control plane for QwenPaw agents and sessions.",
+  "author": "y1yu",
+  "entry": {
+    "backend": "backend.py"
+  },
+  "dependencies": [],
+  "min_version": "1.1.10",
+  "meta": {
+    "commands": [
+      { "name": "/pawone" }
+    ]
+  }
+}
+

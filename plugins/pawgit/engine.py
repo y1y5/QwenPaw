@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import stat
 import time
 from pathlib import Path
 
@@ -250,6 +253,25 @@ class PawGitEngine(ShadowGitRepository):
         self._run_git("update-ref", ref, commit)
         self._set_session_head(key, commit)
         return ref
+
+    async def reset(self) -> None:
+        """Delete and recreate this workspace's PawGit state."""
+        async with self.maintenance_lock:
+            async with self._lock:
+                await asyncio.to_thread(self._reset_sync)
+
+    def _reset_sync(self) -> None:
+        if self.pawgit_dir.exists():
+            shutil.rmtree(self.pawgit_dir, onerror=self._reset_onerror)
+        self.config = {}
+        self._config_mtime_ns = None
+        self._ensure_repo()
+
+    @staticmethod
+    def _reset_onerror(func, path, exc_info) -> None:
+        del exc_info
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
 
     async def timeline(
         self,
