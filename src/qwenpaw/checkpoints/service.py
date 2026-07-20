@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import weakref
@@ -35,6 +36,7 @@ from .policy import (
     ref_kind,
     ref_session_key,
     sanitize_ref_component,
+    session_file_path,
     session_key,
 )
 from .models import (
@@ -469,6 +471,53 @@ class CheckpointService:
                     resolved,
                     True,
                 )
+
+    async def session_state_at(
+        self,
+        *,
+        target: str,
+        session_id: str,
+        user_id: str,
+        channel: str,
+    ) -> tuple[CheckpointEntry, dict]:
+        """Read one session state from a checkpoint without restoring it."""
+        async with self.maintenance_lock:
+            async with self.lock:
+                return await asyncio.to_thread(
+                    self._session_state_at_sync,
+                    target,
+                    session_id,
+                    user_id,
+                    channel,
+                )
+
+    def _session_state_at_sync(
+        self,
+        target: str,
+        session_id: str,
+        user_id: str,
+        channel: str,
+    ) -> tuple[CheckpointEntry, dict]:
+        entry = self.resolve_target(target, session_id, user_id, channel)
+        path = session_file_path(
+            self.workspace_dir,
+            session_id=session_id,
+            user_id=user_id,
+            channel=channel,
+        )
+        rel = path.relative_to(self.workspace_dir).as_posix()
+        payload = self.repository.read_blob(entry.commit, rel)
+        try:
+            state = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CheckpointError(
+                f"Checkpoint session state is invalid: {entry.commit[:12]}",
+            ) from exc
+        if not isinstance(state, dict):
+            raise CheckpointError(
+                f"Checkpoint session state is invalid: {entry.commit[:12]}",
+            )
+        return entry, state
 
     def _timeline_sync(
         self,

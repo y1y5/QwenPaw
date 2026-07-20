@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Empty, Tag, Tooltip } from "antd";
-import { GitBranch, GitCommitHorizontal } from "lucide-react";
+import { Button, Empty, Tag, Tooltip } from "antd";
+import { GitBranch, GitCommitHorizontal, GitFork } from "lucide-react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import { useTranslation } from "react-i18next";
 import type { CheckpointNode } from "@/api/types/checkpoints";
@@ -47,9 +47,12 @@ interface RowData {
   graphWidth: number;
   selectedCommit: string | null;
   onSelect: (node: CheckpointNode) => void;
+  onFork: (node: CheckpointNode) => void;
+  forkingRef: string | null;
   colors: Map<string, string>;
   locale: string;
   labels: Record<string, string>;
+  forkLabel: string;
 }
 
 function GraphLines({
@@ -145,63 +148,90 @@ function GraphLines({
 }
 
 function VirtualRow({ index, style, data }: ListChildComponentProps<RowData>) {
-  const { rows, graphWidth, selectedCommit, onSelect, colors, locale, labels } =
-    data;
+  const {
+    rows,
+    graphWidth,
+    selectedCommit,
+    onSelect,
+    onFork,
+    forkingRef,
+    colors,
+    locale,
+    labels,
+    forkLabel,
+  } = data;
   const row = rows[index];
   const node = row.node;
   const title = node.query || node.name || node.subject;
   const kindLabel = labels[node.kind] ?? node.kind;
   return (
-    <button
-      type="button"
+    <div
       className={`${styles.graphRow} ${
         selectedCommit === node.commit ? styles.selectedRow : ""
       }`}
       style={style}
-      onClick={() => onSelect(node)}
-      aria-label={`${title}, ${kindLabel}`}
     >
-      <div className={styles.graphCell} style={{ width: graphWidth }}>
-        <GraphLines row={row} width={graphWidth} colors={colors} />
-      </div>
-      <div className={styles.messageCell}>
-        <span className={styles.messageTitle}>{title}</span>
-        <span className={styles.messageMeta}>
-          {node.channel} ·{" "}
-          {node.session_title || node.session_id || node.session_key}
-        </span>
-      </div>
-      <div className={styles.kindCell}>
-        {node.is_head && (
-          <span className={styles.headTag}>
-            <GitBranch size={11} />
-            HEAD
-          </span>
-        )}
-        <Tag
-          bordered={false}
-          className={`${styles.kindTag} ${
-            styles[`kind_${node.kind.replace("-", "_")}`]
-          }`}
-        >
-          {kindLabel}
-        </Tag>
-      </div>
-      <Tooltip title={node.commit} mouseEnterDelay={0.5}>
-        <code className={styles.shaCell}>{node.sha}</code>
-      </Tooltip>
-      <time
-        className={styles.timeCell}
-        dateTime={new Date(node.timestamp_ms).toISOString()}
+      <button
+        type="button"
+        className={styles.rowSelect}
+        onClick={() => onSelect(node)}
+        aria-label={`${title}, ${kindLabel}`}
       >
-        {new Intl.DateTimeFormat(locale, {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(node.timestamp_ms)}
-      </time>
-    </button>
+        <div className={styles.graphCell} style={{ width: graphWidth }}>
+          <GraphLines row={row} width={graphWidth} colors={colors} />
+        </div>
+        <div className={styles.messageCell}>
+          <span className={styles.messageTitle}>{title}</span>
+          <span className={styles.messageMeta}>
+            {node.channel} ·{" "}
+            {node.session_title || node.session_id || node.session_key}
+          </span>
+        </div>
+        <div className={styles.kindCell}>
+          {node.is_head && (
+            <span className={styles.headTag}>
+              <GitBranch size={11} />
+              HEAD
+            </span>
+          )}
+          <Tag
+            bordered={false}
+            className={`${styles.kindTag} ${
+              styles[`kind_${node.kind.replace("-", "_")}`]
+            }`}
+          >
+            {kindLabel}
+          </Tag>
+        </div>
+        <Tooltip title={node.commit} mouseEnterDelay={0.5}>
+          <code className={styles.shaCell}>{node.sha}</code>
+        </Tooltip>
+        <time
+          className={styles.timeCell}
+          dateTime={new Date(node.timestamp_ms).toISOString()}
+        >
+          {new Intl.DateTimeFormat(locale, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(node.timestamp_ms)}
+        </time>
+      </button>
+      <div className={styles.actionCell}>
+        <Tooltip title={forkLabel}>
+          <Button
+            type="text"
+            size="small"
+            aria-label={forkLabel}
+            icon={<GitFork size={15} />}
+            loading={forkingRef === node.ref}
+            disabled={!node.session_id || forkingRef !== null}
+            onClick={() => onFork(node)}
+          />
+        </Tooltip>
+      </div>
+    </div>
   );
 }
 
@@ -210,6 +240,8 @@ interface CheckpointGraphProps {
   laneCount: number;
   selectedCommit: string | null;
   onSelect: (node: CheckpointNode) => void;
+  onFork: (node: CheckpointNode) => void;
+  forkingRef: string | null;
   emptyDescription: string;
 }
 
@@ -218,6 +250,8 @@ export function CheckpointGraph({
   laneCount,
   selectedCommit,
   onSelect,
+  onFork,
+  forkingRef,
   emptyDescription,
 }: CheckpointGraphProps) {
   const { t, i18n } = useTranslation();
@@ -248,15 +282,20 @@ export function CheckpointGraph({
       graphWidth,
       selectedCommit,
       onSelect,
+      onFork,
+      forkingRef,
       colors,
       locale: i18n.resolvedLanguage || "en",
       labels,
+      forkLabel: t("checkpoints.fork.tooltip"),
     }),
     [
       rows,
       graphWidth,
       selectedCommit,
       onSelect,
+      onFork,
+      forkingRef,
       colors,
       i18n.resolvedLanguage,
       labels,
@@ -275,6 +314,7 @@ export function CheckpointGraph({
         <span>{t("checkpoints.type")}</span>
         <span>{t("checkpoints.commit")}</span>
         <span>{t("checkpoints.createdAt")}</span>
+        <span aria-label={t("checkpoints.fork.action")} />
       </div>
       <div ref={ref} className={styles.graphBody}>
         {!rows.length ? (

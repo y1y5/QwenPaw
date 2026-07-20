@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -40,6 +41,11 @@ class FakeService:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.created_chats = []
+        self.saved_sessions: list[tuple[str, dict]] = []
+        self.deleted_sessions: list[str] = []
+        self.fail_chat_creation = False
+        owner = self
         chat = SimpleNamespace(
             channel="console",
             user_id="user",
@@ -60,7 +66,40 @@ class FakeService:
                 assert archived is None
                 return [chat, empty_chat]
 
-        self.workspace = SimpleNamespace(chat_manager=ChatManager())
+            async def create_chat(self, spec):
+                del self
+                if owner.fail_chat_creation:
+                    raise RuntimeError("chat persistence failed")
+                owner.created_chats.append(spec)
+                return spec
+
+        class Session:
+            async def save_session_state_dict(
+                self,
+                session_id,
+                *,
+                state,
+                user_id="",
+                channel="",
+            ):
+                del self, user_id, channel
+                owner.saved_sessions.append((session_id, state))
+
+            async def delete_session_state(
+                self,
+                session_id,
+                *,
+                user_id="",
+                channel="",
+            ):
+                del self, user_id, channel
+                owner.deleted_sessions.append(session_id)
+                return True
+
+        self.workspace = SimpleNamespace(
+            chat_manager=ChatManager(),
+            session=Session(),
+        )
 
     async def graph_entries(self, *, limit: int):
         self.calls.append(("graph", {"limit": limit}))
@@ -108,6 +147,10 @@ class FakeService:
     async def set_gc_settings(self, **kwargs):
         self.calls.append(("set_gc_settings", kwargs))
         return kwargs
+
+    async def session_state_at(self, **kwargs):
+        self.calls.append(("session_state_at", kwargs))
+        return _entry(), {"agent": {"state": {"context": []}}}
 
 
 @pytest.fixture(name="checkpoint_service")
@@ -268,3 +311,52 @@ async def test_file_restore_requires_an_explicit_selection(
     assert all(
         call[0] != "restore_with_files" for call in checkpoint_service.calls
     )
+
+
+@pytest.mark.asyncio
+async def test_fork_checkpoint_creates_seeded_chat(checkpoint_service):
+    body = router.ForkCheckpointRequest(
+        commit="a" * 40,
+        session_id="session",
+        user_id="user",
+        channel="console",
+    )
+
+    result = await router.fork_checkpoint(body, SimpleNamespace())
+
+    UUID(result.chat_id)
+    UUID(result.session_id)
+    assert result.source_commit == "a" * 40
+    assert checkpoint_service.saved_sessions == [
+        (result.session_id, {"agent": {"state": {"context": []}}}),
+    ]
+    created = checkpoint_service.created_chats[0]
+    assert created.id == result.chat_id
+    assert created.session_id == result.session_id
+    assert created.name == "Readable session title (Fork)"
+    assert created.meta["checkpoint_fork"] == {
+        "source_commit": "a" * 40,
+        "source_ref": "refs/auto/console-user-session/1",
+        "source_session_id": "session",
+    }
+
+
+@pytest.mark.asyncio
+async def test_fork_checkpoint_rolls_back_state_on_chat_failure(
+    checkpoint_service,
+):
+    checkpoint_service.fail_chat_creation = True
+    body = router.ForkCheckpointRequest(
+        commit="a" * 40,
+        session_id="session",
+        user_id="user",
+        channel="console",
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await router.fork_checkpoint(body, SimpleNamespace())
+
+    assert caught.value.status_code == 500
+    assert checkpoint_service.deleted_sessions == [
+        checkpoint_service.saved_sessions[0][0],
+    ]

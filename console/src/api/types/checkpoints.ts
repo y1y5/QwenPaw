@@ -69,6 +69,20 @@ export interface RestoreResult {
   include_files: boolean;
 }
 
+export interface ForkCheckpointRequest {
+  commit: string;
+  session_id: string;
+  user_id: string;
+  channel: string;
+  name?: string;
+}
+
+export interface ForkCheckpointResult {
+  chat_id: string;
+  session_id: string;
+  source_commit: string;
+}
+
 export interface GcResult {
   deleted_refs: string[];
   kept_refs: string[];

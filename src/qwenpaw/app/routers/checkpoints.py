@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import logging
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from ...checkpoints.models import (
 from ...checkpoints.policy import session_key
 from ...checkpoints.runtime import RUNTIME
 from ..agent_context import get_agent_for_request
+from ..chats.models import ChatSpec
 
 router = APIRouter(prefix="/workspace/checkpoints", tags=["checkpoints"])
 logger = logging.getLogger(__name__)
@@ -41,6 +43,20 @@ class RestoreRequest(BaseModel):
     include_memory: bool = False
     include_files: bool = False
     files: list[str] | None = None
+
+
+class ForkCheckpointRequest(BaseModel):
+    commit: str = Field(min_length=7)
+    session_id: str = Field(min_length=1)
+    user_id: str = ""
+    channel: str = "console"
+    name: str = Field(default="", max_length=200)
+
+
+class ForkCheckpointResponse(BaseModel):
+    chat_id: str
+    session_id: str
+    source_commit: str
 
 
 class GcRequest(BaseModel):
@@ -188,6 +204,97 @@ async def create_checkpoint(body: SnapshotRequest, request: Request) -> dict:
     except (CheckpointError, ValueError) as exc:
         raise _checkpoint_error(CheckpointError(str(exc))) from exc
     return asdict(result)
+
+
+@router.post("/fork", response_model=ForkCheckpointResponse)
+async def fork_checkpoint(
+    body: ForkCheckpointRequest,
+    request: Request,
+) -> ForkCheckpointResponse:
+    """Create a new chat from the session state stored in a checkpoint."""
+    service = await _service(request)
+    workspace = service.workspace
+    if workspace is None:
+        raise HTTPException(status_code=503, detail="Workspace is unavailable")
+
+    try:
+        entry, state = await service.session_state_at(
+            target=body.commit,
+            session_id=body.session_id,
+            user_id=body.user_id,
+            channel=body.channel,
+        )
+    except CheckpointError as exc:
+        raise _checkpoint_error(exc) from exc
+
+    source_name = "New Chat"
+    try:
+        chats = await workspace.chat_manager.list_chats(archived=None)
+        source = next(
+            (
+                chat
+                for chat in chats
+                if chat.session_id == body.session_id
+                and chat.user_id == body.user_id
+                and chat.channel == body.channel
+            ),
+            None,
+        )
+        if source is not None and source.name:
+            source_name = source.name
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "Failed to resolve checkpoint fork title",
+            exc_info=True,
+        )
+
+    fork_session_id = str(uuid4())
+    chat_id = str(uuid4())
+    spec = ChatSpec(
+        id=chat_id,
+        name=body.name.strip() or f"{source_name} (Fork)",
+        session_id=fork_session_id,
+        user_id=body.user_id,
+        channel=body.channel,
+        meta={
+            "checkpoint_fork": {
+                "source_commit": entry.commit,
+                "source_ref": entry.ref,
+                "source_session_id": body.session_id,
+            },
+        },
+    )
+
+    session_written = False
+    try:
+        await workspace.session.save_session_state_dict(
+            fork_session_id,
+            state=state,
+            user_id=body.user_id,
+            channel=body.channel,
+        )
+        session_written = True
+        await workspace.chat_manager.create_chat(spec)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        if session_written:
+            try:
+                await workspace.session.delete_session_state(
+                    fork_session_id,
+                    user_id=body.user_id,
+                    channel=body.channel,
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("Failed to roll back checkpoint fork state")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create checkpoint fork",
+        ) from exc
+
+    return ForkCheckpointResponse(
+        chat_id=chat_id,
+        session_id=fork_session_id,
+        source_commit=entry.commit,
+    )
 
 
 async def _restore(body: RestoreRequest, request: Request, *, dry_run: bool):

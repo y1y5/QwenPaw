@@ -128,6 +128,32 @@ async def test_save_and_load_round_trip(session, tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_save_and_delete_raw_session_state(session, tmp_path: Path):
+    state = {"agent": {"state": {"context": [{"role": "user"}]}}}
+
+    await session.save_session_state_dict(
+        "fork-session",
+        state=state,
+        user_id="user",
+        channel="console",
+    )
+
+    target = tmp_path / "console" / "user_fork-session.json"
+    assert json.loads(target.read_text(encoding="utf-8")) == state
+    assert await session.delete_session_state(
+        "fork-session",
+        user_id="user",
+        channel="console",
+    )
+    assert not target.exists()
+    assert not await session.delete_session_state(
+        "fork-session",
+        user_id="user",
+        channel="console",
+    )
+
+
+@pytest.mark.asyncio
 async def test_load_missing_session_allow_not_exist(session):
     state = _StateModule({"untouched": True})
 

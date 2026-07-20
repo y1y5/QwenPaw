@@ -91,4 +91,24 @@ describe("checkpointsApi", () => {
       }),
     );
   });
+
+  it("forks a checkpoint into a new conversation", async () => {
+    vi.mocked(request).mockResolvedValue({});
+    const body = {
+      commit: "c".repeat(40),
+      session_id: "session",
+      user_id: "user",
+      channel: "console",
+    };
+
+    await checkpointsApi.fork(body);
+
+    expect(request).toHaveBeenCalledWith(
+      "/workspace/checkpoints/fork",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+  });
 });

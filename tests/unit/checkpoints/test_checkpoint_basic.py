@@ -344,6 +344,37 @@ async def test_snapshot_accepts_windows_reserved_device_name(
 
 
 @pytest.mark.asyncio
+async def test_session_state_at_reads_checkpoint_without_restoring(
+    tmp_path: Path,
+) -> None:
+    engine = CheckpointService(tmp_path)
+    session_path = _write_session(tmp_path, "checkpoint query")
+    ref = await engine.make_auto_checkpoint(
+        session_id=SESSION_ID,
+        user_id=USER_ID,
+        channel=CHANNEL,
+        query="checkpoint query",
+    )
+    _write_session(tmp_path, "current query")
+
+    entry, state = await engine.session_state_at(
+        target=ref,
+        session_id=SESSION_ID,
+        user_id=USER_ID,
+        channel=CHANNEL,
+    )
+
+    assert entry.ref == ref
+    assert state["agent"]["state"]["context"][0]["id"] == (
+        "msg-checkpoint query"
+    )
+    current = json.loads(session_path.read_text(encoding="utf-8"))
+    assert current["agent"]["state"]["context"][0]["id"] == (
+        "msg-current query"
+    )
+
+
+@pytest.mark.asyncio
 async def test_restore_command_validates_and_preserves_file_selection(
     workspace: _Workspace,
 ) -> None:

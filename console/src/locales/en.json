@@ -524,6 +524,11 @@
     "more": "More actions",
     "noMatches": "No checkpoints match these filters.",
     "empty": "No state checkpoints yet. Your version history will appear here.",
+    "fork": {
+      "action": "Fork",
+      "tooltip": "Create a new conversation from this checkpoint",
+      "success": "New conversation created"
+    },
     "kind": {
       "auto": "Auto",
       "snapshot": "Snapshot",

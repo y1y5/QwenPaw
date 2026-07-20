@@ -487,6 +487,11 @@
     "more": "Thao tác khác",
     "noMatches": "Không có điểm kiểm tra phù hợp.",
     "empty": "Chưa có điểm kiểm tra trạng thái. Lịch sử phiên bản sẽ xuất hiện ở đây.",
+    "fork": {
+      "action": "Tạo nhánh",
+      "tooltip": "Tạo cuộc trò chuyện mới từ checkpoint này",
+      "success": "Đã tạo cuộc trò chuyện mới"
+    },
     "kind": {
       "auto": "Tự động",
       "snapshot": "Ảnh chụp",

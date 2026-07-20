@@ -794,6 +794,11 @@
     "more": "Tindakan lainnya",
     "noMatches": "Tidak ada checkpoint yang cocok.",
     "empty": "Belum ada checkpoint status. Riwayat versi akan muncul di sini.",
+    "fork": {
+      "action": "Fork",
+      "tooltip": "Buat percakapan baru dari checkpoint ini",
+      "success": "Percakapan baru dibuat"
+    },
     "kind": {
       "auto": "Otomatis",
       "snapshot": "Snapshot",

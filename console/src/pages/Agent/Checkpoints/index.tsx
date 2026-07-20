@@ -25,6 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { checkpointsApi } from "@/api/modules/checkpoints";
 import type {
@@ -35,6 +36,7 @@ import type {
 } from "@/api/types/checkpoints";
 import { useAgentStore } from "@/stores/agentStore";
 import { useAppMessage } from "@/hooks/useAppMessage";
+import { buildSessionPath } from "@/utils/sessionRoute";
 import { buildGraphRows, graphLaneCount } from "./graphLayout";
 import { CheckpointGraph } from "./CheckpointGraph";
 import { RestoreModal } from "./RestoreModal";
@@ -50,6 +52,7 @@ const EMPTY_SUMMARY: CheckpointGraphResponse["summary"] = {
 
 export default function CheckpointsPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { message } = useAppMessage();
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const [modal, modalContext] = Modal.useModal();
@@ -77,6 +80,7 @@ export default function CheckpointsPage() {
   const [gcSettingsLoading, setGcSettingsLoading] = useState(false);
   const [gcSettingsSaving, setGcSettingsSaving] = useState(false);
   const [gcSettingsForm] = Form.useForm<CheckpointGcSettings>();
+  const [forkingRef, setForkingRef] = useState<string | null>(null);
   const loadVersion = useRef(0);
 
   const load = useCallback(async (quiet = false, signal?: AbortSignal) => {
@@ -293,6 +297,25 @@ export default function CheckpointsPage() {
     setRestoreOpen(true);
   };
 
+  const forkCheckpoint = async (node: CheckpointNode) => {
+    if (!node.session_id || forkingRef) return;
+    setForkingRef(node.ref);
+    try {
+      const result = await checkpointsApi.fork({
+        commit: node.commit,
+        session_id: node.session_id,
+        user_id: node.user_id,
+        channel: node.channel,
+      });
+      message.success(t("checkpoints.fork.success"));
+      navigate(buildSessionPath("chat", result.chat_id));
+    } catch (caught) {
+      message.error((caught as Error).message);
+    } finally {
+      setForkingRef(null);
+    }
+  };
+
   return (
     <div className={styles.page}>
       {modalContext}
@@ -451,6 +474,8 @@ export default function CheckpointsPage() {
               laneCount={laneCount}
               selectedCommit={selected?.commit ?? null}
               onSelect={setSelected}
+              onFork={(node) => void forkCheckpoint(node)}
+              forkingRef={forkingRef}
               emptyDescription={
                 graph.nodes.length
                   ? t("checkpoints.noMatches")

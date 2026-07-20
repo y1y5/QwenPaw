@@ -4,6 +4,8 @@ import type {
   CheckpointGraphResponse,
   CheckpointStatus,
   GcRequest,
+  ForkCheckpointRequest,
+  ForkCheckpointResult,
   GcResult,
   RestoreRequest,
   RestoreResult,
@@ -33,6 +35,12 @@ export const checkpointsApi = {
     name: string;
   }) =>
     request<{ ref: string; commit: string }>(`${base}/snapshot`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  fork: (body: ForkCheckpointRequest) =>
+    request<ForkCheckpointResult>(`${base}/fork`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

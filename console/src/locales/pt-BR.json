@@ -358,6 +358,11 @@
     "more": "Mais ações",
     "noMatches": "Nenhum ponto corresponde aos filtros.",
     "empty": "Ainda não há pontos de controle. O histórico aparecerá aqui.",
+    "fork": {
+      "action": "Criar ramificação",
+      "tooltip": "Criar uma nova conversa a partir deste checkpoint",
+      "success": "Nova conversa criada"
+    },
     "kind": {
       "auto": "Auto",
       "snapshot": "Snapshot",
