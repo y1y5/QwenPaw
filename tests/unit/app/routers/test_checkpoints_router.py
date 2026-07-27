@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -10,7 +11,7 @@ from fastapi import HTTPException
 
 from qwenpaw.app.routers import checkpoints as router
 from qwenpaw.checkpoints.models import CheckpointEntry, GcResult, RestoreResult
-from qwenpaw.checkpoints.policy import session_key
+from qwenpaw.checkpoints.policy import session_file_path, session_key
 
 
 def _entry() -> CheckpointEntry:
@@ -74,27 +75,19 @@ class FakeService:
                 return spec
 
         class Session:
-            async def save_session_state_dict(
+            async def save_session_state(
                 self,
                 session_id,
-                *,
-                state,
                 user_id="",
                 channel="",
+                **state_modules,
             ):
                 del self, user_id, channel
+                state = {
+                    name: module.state_dict()
+                    for name, module in state_modules.items()
+                }
                 owner.saved_sessions.append((session_id, state))
-
-            async def delete_session_state(
-                self,
-                session_id,
-                *,
-                user_id="",
-                channel="",
-            ):
-                del self, user_id, channel
-                owner.deleted_sessions.append(session_id)
-                return True
 
         self.workspace = SimpleNamespace(
             chat_manager=ChatManager(),
@@ -160,7 +153,22 @@ def _checkpoint_service(monkeypatch) -> FakeService:
     async def get_service(_request):
         return fake
 
+    async def remove_session_state(
+        _service,
+        *,
+        session_id,
+        user_id,
+        channel,
+    ):
+        del _service, user_id, channel
+        fake.deleted_sessions.append(session_id)
+
     monkeypatch.setattr(router, "_service", get_service)
+    monkeypatch.setattr(
+        router,
+        "_remove_fork_session_state",
+        remove_session_state,
+    )
     return fake
 
 
@@ -334,9 +342,14 @@ async def test_fork_checkpoint_creates_seeded_chat(checkpoint_service):
     assert created.id == result.chat_id
     assert created.session_id == result.session_id
     assert created.name == "Readable session title (Fork)"
+    expected_session_key = session_key(
+        channel="console",
+        user_id="user",
+        session_id="session",
+    )
     assert created.meta["checkpoint_fork"] == {
         "source_commit": "a" * 40,
-        "source_ref": "refs/auto/console-user-session/1",
+        "source_ref": f"refs/auto/{expected_session_key}/1",
         "source_session_id": "session",
     }
 
@@ -360,3 +373,62 @@ async def test_fork_checkpoint_rolls_back_state_on_chat_failure(
     assert checkpoint_service.deleted_sessions == [
         checkpoint_service.saved_sessions[0][0],
     ]
+
+
+@pytest.mark.asyncio
+async def test_fork_state_rollback_uses_checkpoint_session_path(
+    tmp_path: Path,
+):
+    target = session_file_path(
+        tmp_path,
+        session_id="fork-session",
+        user_id="user",
+        channel="console",
+    )
+    target.parent.mkdir(parents=True)
+    target.write_text("{}", encoding="utf-8")
+
+    # pylint: disable-next=protected-access
+    await router._remove_fork_session_state(
+        SimpleNamespace(workspace_dir=tmp_path),
+        session_id="fork-session",
+        user_id="user",
+        channel="console",
+    )
+
+    assert not target.exists()
+
+
+@pytest.mark.asyncio
+async def test_fork_checkpoint_waits_for_persistence_when_cancelled(
+    checkpoint_service,
+):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    original_save = checkpoint_service.workspace.session.save_session_state
+
+    async def slow_save(*args, **kwargs):
+        started.set()
+        await release.wait()
+        await original_save(*args, **kwargs)
+
+    checkpoint_service.workspace.session.save_session_state = slow_save
+    body = router.ForkCheckpointRequest(
+        commit="a" * 40,
+        session_id="session",
+        user_id="user",
+        channel="console",
+    )
+    task = asyncio.create_task(
+        router.fork_checkpoint(body, SimpleNamespace()),
+    )
+    await started.wait()
+    task.cancel()
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(checkpoint_service.saved_sessions) == 1
+    assert len(checkpoint_service.created_chats) == 1
+    assert checkpoint_service.deleted_sessions == []

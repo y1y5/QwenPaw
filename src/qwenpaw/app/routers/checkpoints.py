@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+import asyncio
+from dataclasses import asdict, dataclass
 import logging
 from uuid import uuid4
 
@@ -15,8 +16,9 @@ from ...checkpoints.models import (
     CheckpointError,
     RestoreResult,
 )
-from ...checkpoints.policy import session_key
+from ...checkpoints.policy import session_file_path, session_key
 from ...checkpoints.runtime import RUNTIME
+from ...utils.io_utils import get_path_lock, unlink_async
 from ..agent_context import get_agent_for_request
 from ..chats.models import ChatSpec
 
@@ -59,6 +61,16 @@ class ForkCheckpointResponse(BaseModel):
     source_commit: str
 
 
+@dataclass(frozen=True)
+class _SerializedStateModule:
+    """Adapt serialized checkpoint state to ``save_session_state``."""
+
+    state: object
+
+    def state_dict(self) -> object:
+        return self.state
+
+
 class GcRequest(BaseModel):
     compact: bool = False
     keep_count: int | None = Field(default=None, ge=0)
@@ -99,6 +111,71 @@ async def _service(request: Request):
 
 def _checkpoint_error(exc: CheckpointError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
+
+
+async def _remove_fork_session_state(
+    service,
+    *,
+    session_id: str,
+    user_id: str,
+    channel: str,
+) -> None:
+    """Remove a failed fork through the shared async I/O interface."""
+    path = session_file_path(
+        service.workspace_dir,
+        session_id=session_id,
+        user_id=user_id,
+        channel=channel,
+    )
+    async with get_path_lock(path):
+        try:
+            await unlink_async(path)
+        except FileNotFoundError:
+            pass
+
+
+async def _persist_checkpoint_fork(
+    service,
+    workspace,
+    spec: ChatSpec,
+    state: dict,
+) -> None:
+    """Persist a fork atomically from the request's point of view."""
+    modules = {
+        name: _SerializedStateModule(module_state)
+        for name, module_state in state.items()
+    }
+    try:
+        await workspace.session.save_session_state(
+            spec.session_id,
+            user_id=spec.user_id,
+            channel=spec.channel,
+            **modules,
+        )
+        await workspace.chat_manager.create_chat(spec)
+    except BaseException:
+        try:
+            await _remove_fork_session_state(
+                service,
+                session_id=spec.session_id,
+                user_id=spec.user_id,
+                channel=spec.channel,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception("Failed to roll back checkpoint fork state")
+        raise
+
+
+async def _wait_for_fork_transaction(task: asyncio.Task[None]) -> None:
+    """Wait for fork persistence before propagating request cancellation."""
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        except BaseException:
+            pass
+        raise
 
 
 async def _workspace_sessions(service) -> list[dict]:
@@ -265,26 +342,13 @@ async def fork_checkpoint(
         },
     )
 
-    session_written = False
+    transaction = asyncio.create_task(
+        _persist_checkpoint_fork(service, workspace, spec, state),
+        name=f"checkpoint-fork:{chat_id}",
+    )
     try:
-        await workspace.session.save_session_state_dict(
-            fork_session_id,
-            state=state,
-            user_id=body.user_id,
-            channel=body.channel,
-        )
-        session_written = True
-        await workspace.chat_manager.create_chat(spec)
+        await _wait_for_fork_transaction(transaction)
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        if session_written:
-            try:
-                await workspace.session.delete_session_state(
-                    fork_session_id,
-                    user_id=body.user_id,
-                    channel=body.channel,
-                )
-            except Exception:  # pylint: disable=broad-exception-caught
-                logger.exception("Failed to roll back checkpoint fork state")
         raise HTTPException(
             status_code=500,
             detail="Failed to create checkpoint fork",

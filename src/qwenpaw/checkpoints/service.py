@@ -483,7 +483,7 @@ class CheckpointService:
         """Read one session state from a checkpoint without restoring it."""
         async with self.maintenance_lock:
             async with self.lock:
-                return await asyncio.to_thread(
+                return await run_sync_io(
                     self._session_state_at_sync,
                     target,
                     session_id,

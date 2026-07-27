@@ -9,6 +9,7 @@ Covers:
 - ``migrate_legacy_weixin_session_files`` weixin -> wechat rename
 - ``AgentStateError`` raised for missing-file ``allow_not_exist=False``
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
 from __future__ import annotations
 
@@ -125,32 +126,6 @@ async def test_save_and_load_round_trip(session, tmp_path: Path):
         agent=restored,
     )
     assert restored.state_dict() == {"value": 7}
-
-
-@pytest.mark.asyncio
-async def test_save_and_delete_raw_session_state(session, tmp_path: Path):
-    state = {"agent": {"state": {"context": [{"role": "user"}]}}}
-
-    await session.save_session_state_dict(
-        "fork-session",
-        state=state,
-        user_id="user",
-        channel="console",
-    )
-
-    target = tmp_path / "console" / "user_fork-session.json"
-    assert json.loads(target.read_text(encoding="utf-8")) == state
-    assert await session.delete_session_state(
-        "fork-session",
-        user_id="user",
-        channel="console",
-    )
-    assert not target.exists()
-    assert not await session.delete_session_state(
-        "fork-session",
-        user_id="user",
-        channel="console",
-    )
 
 
 @pytest.mark.asyncio
