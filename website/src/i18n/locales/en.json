@@ -302,6 +302,7 @@
     "context": "Context",
     "loopEngineering": "Loop Engineering",
     "commands": "Magic commands",
+    "checkpoints": "State Checkpoints",
     "cron": "Cron Jobs",
     "heartbeat": "Heartbeat",
     "config": "Config & working dir",

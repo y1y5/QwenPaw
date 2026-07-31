@@ -25,6 +25,7 @@ export const DOC_GROUPS: DocGroup[] = [
       { slug: "tui", titleKey: "docs.tui" },
       { slug: "channels", titleKey: "docs.channels" },
       { slug: "commands", titleKey: "docs.commands" },
+      { slug: "checkpoints", titleKey: "docs.checkpoints" },
       { slug: "cron", titleKey: "docs.cron" },
       { slug: "heartbeat", titleKey: "docs.heartbeat" },
       { slug: "memory", titleKey: "docs.memory" },

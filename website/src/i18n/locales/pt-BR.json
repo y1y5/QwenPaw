@@ -285,6 +285,7 @@
     "context": "Contexto",
     "loopEngineering": "Loop Engineering",
     "commands": "Comandos magicos",
+    "checkpoints": "Checkpoints de Estado",
     "heartbeat": "Heartbeat",
     "config": "Config e diretorio de trabalho",
     "security": "Seguranca",
